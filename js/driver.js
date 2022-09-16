@@ -14,8 +14,8 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
         super();
 
-        this.port = config.socket.port;
-        this.ip = config.socket.ip;
+        this.port = config.socket.port || 4546;
+        this.ip = config.socket.ip || "127.0.0.1";
         this.auth = config.auth;
         this.serverVersion = { minor: 0, major: 0 };
         this.activeQueries = {};
