@@ -82,6 +82,10 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
             close: () => {
                 return this._send_query({ op: 8, data: { table: name } });
+            },
+
+            rebuild: () => {
+                return this._send_query({ op: 9, data: { table: name } });
             }
         };
     }
