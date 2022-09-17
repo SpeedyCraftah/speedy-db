@@ -3,8 +3,8 @@ files = $(wildcard ./src/*.cpp) $(wildcard ./src/**/*.cpp) $(wildcard ./src/*.c)
 flags = -pthread
 
 run:
-	g++ -g -O0 -o bin $(flags) $(files) -lcrypto
-	./bin password=test
+	g++ -g -O0 -o ./bin/bin $(flags) $(files) -lcrypto
+	./bin/bin password=test
 
 production:
-	g++ -Wall -Ofast -ffat-lto-objects -flto -o bin $(flags) $(files) -lcrypto
+	g++ -Wall -Ofast -ffat-lto-objects -flto -o ./bin/bin $(flags) $(files) -lcrypto
