@@ -728,11 +728,11 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
     } else if (op == query_ops::rebuild_table) {
         log("Rebuild of table %s has been started", table->header.name);
 
-        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+        auto start_time = std::chrono::high_resolution_clock::now();
         table_rebuild_statistics stats = rebuild_table(table->header.name);
-        std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+        auto end_time = std::chrono::high_resolution_clock::now();
 
-        log("Rebuild of table %s has been completed", table->header.name);
+        log("Rebuild of table %s has been completed (took %ums)", table->header.name, (unsigned int)((end_time - start_time) / std::chrono::milliseconds(1)));
         log("=== Table %s rebuild statistics ===\n- %u records discovered\n- %u dead records removed\n- %u short dynamics optimized", table->header.name, stats.record_count, stats.dead_record_count, stats.short_dynamic_count);
         log("=== Table %s rebuild statistics ===", table->header.name);
 
