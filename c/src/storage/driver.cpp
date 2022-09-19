@@ -877,6 +877,10 @@ table_rebuild_statistics rebuild_table(char* table_name) {
     FILE* new_data_handle = fopen(new_data_path.c_str(), "r+b");
     FILE* new_dynamic_handle = fopen(new_dynamic_path.c_str(), "r+b");
 
+    // Seek the new handles to correct position.
+    fseek(new_dynamic_handle, 0, SEEK_END);
+    fseek(new_data_handle, 0, SEEK_END);
+
     while (true) {
         size_t header_location = ftell(table->data_handle);
 
@@ -916,7 +920,7 @@ table_rebuild_statistics rebuild_table(char* table_name) {
                 fread_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size + 1, table->dynamic_handle);
 
                 // Update short string statistic if short.
-                if (entry->size != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
+                if (entry->size + 1 != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
 
                 // Update the record data for both records.
                 dynamic_data->record_location = ftell(new_data_handle);
@@ -933,13 +937,26 @@ table_rebuild_statistics rebuild_table(char* table_name) {
 
         // Write the record to the new data file.
         fwrite(header, 1, table->record_size, new_data_handle);
+
+        fseek(new_dynamic_handle, 0, SEEK_END);
+        fseek(new_data_handle, 0, SEEK_END);
     }
-    
+
+    // Close new files.
+    fclose(new_data_handle);
+    fclose(new_dynamic_handle);
+
     // Temporarily copy table name.
     std::string safe_table_name = std::string(table_name);
 
+    // Unlock mutex for table close.
+    mutex.unlock();
+
     // Close the table.
     close_table(safe_table_name.c_str());
+
+    // Acquire mutex again.
+    mutex.lock();
 
     // Delete old data files.
     remove(old_data_path.c_str());
@@ -949,14 +966,13 @@ table_rebuild_statistics rebuild_table(char* table_name) {
     rename(new_data_path.c_str(), old_data_path.c_str());
     rename(new_dynamic_path.c_str(), old_dynamic_path.c_str());
 
+    // Unlock mutex again.
+    mutex.unlock();
+
     // Reopen the table.
     open_table(safe_table_name.c_str());
 
-    mutex.unlock();
-
     free(header);
-    fclose(new_data_handle);
-    fclose(new_dynamic_handle);
 
     return stats;
 }
