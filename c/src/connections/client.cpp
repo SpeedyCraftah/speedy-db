@@ -370,6 +370,9 @@ void* client_connection_handle(void* arg) {
             send(socket_id, rawData.c_str(), rawData.length(), 0);
         }
 
+        // Setup a TCP keep-alive.
+        int val = 1;
+        setsockopt(socket_id, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val));
     } catch(std::exception& e) {
         logerr("Socket with handle %d has been terminated due to an invalid handshake", socket_id);
         
