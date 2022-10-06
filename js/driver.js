@@ -8,6 +8,7 @@ function randomInt(min, max) {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+const keepAlivePacket = new Uint8Array([0, 0, 0, 0]);
 module.exports = class SpeedDBClient extends EventEmitter {
     constructor(config = { socket: { ip: "127.0.0.1", port: 4546 }, auth: {}, cipher: "" }) {
         if (!config.socket) config.socket = { ip: "127.0.0.1", port: 4546 };
@@ -155,6 +156,19 @@ module.exports = class SpeedDBClient extends EventEmitter {
             // Read the length of the buffer.
             const length = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
 
+            // If the packet is a keep-alive test, send back a keep-alive message.
+            if (length === 0) {
+                // Send back keep-alive packet to signify the connection is still alive.
+                this.socket.write(keepAlivePacket);
+
+                // If packet has more data.
+                if (data.length > 4) {
+                    this._on_data(data.slice(4));
+                }
+                
+                return;
+            }
+
             // If the entire packet is present.
             if (data.length >= length + 4) {
                 this._on_message(data.slice(4, length + 3));
@@ -219,6 +233,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
     async connect() {
         this.socket = new Net.Socket();
+        this.socket.setKeepAlive(true, 5000);
 
         return new Promise((resolve, reject) => {
             this.socket.once("ready", async () => {
@@ -228,7 +243,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
                 // Send handshake.
                 let handshakeData = {
-                    version: { major: 0, minor: 1 },
+                    version: { major: 1, minor: 0 },
                     options: { short_attributes: false, error_text: true }
                 };
 

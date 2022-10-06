@@ -39,6 +39,7 @@ struct client_socket_data {
     char address[16];
     config_t config;
     version_t version;  
+    uint64_t last_packet_time = 0;
 };
 
 namespace errors {
@@ -70,5 +71,6 @@ namespace errors {
 }
 
 void* client_connection_handle(void* arg);
+int send_ka(client_socket_data* socket_data);
 void send_res(client_socket_data* socket_data, const char* data, uint32_t length);
 void send_json(client_socket_data* socket_data, const nlohmann::json& data);

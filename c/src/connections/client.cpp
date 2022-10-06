@@ -17,6 +17,9 @@
 #include <openssl/dh.h>
 #include "../crypto/crypto.h"
 #include "../crypto/base64.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #define MAX_PACKET_SIZE 104857600
 
@@ -47,6 +50,12 @@ const char* errors::text[] = {
 
 // A function which sends data to the socket across a TCP stream which supports
 // packets being bundled together during transmission by including a header and terminator.
+
+// Sends an empty packet with size 0 which should be treated as a keep-alive test by the client.
+uint32_t ka_data = 0;
+int send_ka(client_socket_data* socket_data) {
+    return send(socket_data->socket_id, (const char*)&ka_data, sizeof(uint32_t), 0);
+}
 
 // May be improved to reduce send calls.
 void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_length) {
@@ -369,10 +378,6 @@ void* client_connection_handle(void* arg) {
             std::string rawData = dataObj.dump();
             send(socket_id, rawData.c_str(), rawData.length(), 0);
         }
-
-        // Setup a TCP keep-alive.
-        int val = 1;
-        setsockopt(socket_id, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val));
     } catch(std::exception& e) {
         logerr("Socket with handle %d has been terminated due to an invalid handshake", socket_id);
         
@@ -406,6 +411,12 @@ void* client_connection_handle(void* arg) {
             log("Received terminate signal from socket handle %d - closing connection", socket_data->socket_id);
             goto break_socket;
         }
+
+        // Update last packet time.
+        socket_data->last_packet_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+        // If remaining size is 0, ignore as it is a keep-alive test response.
+        if (remaining_size == 0) continue;
 
         // Check if the packet is too large.
         if (remaining_size > MAX_PACKET_SIZE) {

@@ -9,9 +9,17 @@
 #include <unistd.h>
 #include <chrono>
 #include <thread>
+#include "keepalive.h"
 
 void accept_connections() {
     log("SpeedDB is now listening for connections at TCP port %d", server_config::port);
+
+    // Start the keepalive monitoring thread.
+    pthread_t ka_thread_id;
+    int thread_status = pthread_create(
+        &ka_thread_id, NULL, keepalive_thread_handle, NULL
+    );
+    log("Socket keep-alive monitoring thread has been started");
 
     struct sockaddr client_address;
     int client_address_length = sizeof(client_address);
@@ -35,6 +43,7 @@ void accept_connections() {
         // Create connection object and add information.
         client_socket_data* socket_data = new client_socket_data;
         socket_data->socket_id = client_id;
+        socket_data->last_packet_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         strcpy(inet_ntoa(addr->sin_addr), socket_data->address);
 
         log("A connection has been established with socket handle %d and IP %s", client_id, socket_data->address);
