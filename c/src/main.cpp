@@ -23,8 +23,8 @@ std::unordered_map<int, client_socket_data*>* socket_connections;
 std::unordered_map<std::string, active_table*>* open_tables;
 
 // Default server options and attributes.
-int server_config::version::major = 0;
-int server_config::version::minor = 1;
+int server_config::version::major = 1;
+int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
 char* server_config::password = nullptr;
