@@ -16,10 +16,11 @@ void* keepalive_thread_handle(void* args) {
 
         for (auto& socket : *socket_connections) {
             // If there has been no packets even after several keep-alive messages.
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - socket.second->last_packet_time > 50000 + 60000) {
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - socket.second->last_packet_time > 60000 + 60000 + 30000) {
                 logerr("Socket with handle %d has been terminated as it has not replied to multiple keep-alive packets", socket.second->socket_id);
                 // Terminate the socket as it does not appear to be alive and is just sapping resources.
                 socket_to_delete = socket.second;
+                break;
             }
 
             // If there has been no packets from the socket for a while.
@@ -39,8 +40,8 @@ void* keepalive_thread_handle(void* args) {
             continue;
         }
 
-        // Sleep for 16 seconds before next check.
-        std::this_thread::sleep_for(std::chrono::milliseconds(60000));
+        // Sleep for 30 seconds before next check.
+        std::this_thread::sleep_for(std::chrono::milliseconds(30000));
     }
 
     return 0;
