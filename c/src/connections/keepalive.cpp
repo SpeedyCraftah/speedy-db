@@ -11,13 +11,15 @@ const uint32_t ka_data = 0;
 const uint32_t ka_length = sizeof(uint32_t);
 void* keepalive_thread_handle(void* args) {
     while (true) {
+        // Temporary solution to prevent segmentation faults when removing elements.
+        client_socket_data* socket_to_delete = nullptr;
+
         for (auto& socket : *socket_connections) {
             // If there has been no packets even after several keep-alive messages.
             if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - socket.second->last_packet_time > 50000 + 60000) {
                 logerr("Socket with handle %d has been terminated as it has not replied to multiple keep-alive packets", socket.second->socket_id);
                 // Terminate the socket as it does not appear to be alive and is just sapping resources.
-                pthread_cancel(socket.second->thread_id);
-                terminate_socket(socket.second->socket_id);
+                socket_to_delete = socket.second;
             }
 
             // If there has been no packets from the socket for a while.
@@ -26,6 +28,15 @@ void* keepalive_thread_handle(void* args) {
                 // Which would confirm the connection is still alive, just silent.
                 send_ka(socket.second);
             }
+        }
+
+        // If there is a connection which needs to be terminated.
+        // Done outside of loop as deletion is not supported inside of loops.
+        if (socket_to_delete != nullptr) {
+            pthread_cancel(socket_to_delete->thread_id);
+            terminate_socket(socket_to_delete->socket_id);
+            socket_to_delete = nullptr;
+            continue;
         }
 
         // Sleep for 16 seconds before next check.
