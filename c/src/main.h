@@ -1,10 +1,13 @@
 #pragma once
 #include "connections/client.h"
+#include "permissions/accounts.h"
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 
 extern int server_socket_id;
 extern std::unordered_map<int, client_socket_data*>* socket_connections;
+extern std::unordered_map<std::string, DatabaseAccount*>* database_accounts;
+extern FILE* database_accounts_handle;
 
 namespace server_config {
     namespace version {
@@ -21,4 +24,6 @@ namespace server_config {
     extern char* password;
     extern int port;
     extern unsigned int max_connections;
+    extern bool root_account_enabled;
+    extern char* root_password;
 };
