@@ -262,13 +262,13 @@ void* client_connection_handle(void* arg) {
             } else throw std::exception();
             
         } else if (server_config::force_encrypted_traffic) {
-            logerr("Socket with handle %d has been terminated due to failing authentication.", socket_id);
+            logerr("Socket with handle %d has been terminated due to not being encrypted despite server requiring so", socket_id);
 
             std::string handshake_failure = nlohmann::json({
                 { "error", true },
                 { "data", {
-                    { "code", errors::incorrect_password },
-                    { "text", errors::text[errors::incorrect_password] }
+                    { "code", errors::traffic_encryption_mandatory },
+                    { "text", errors::text[errors::traffic_encryption_mandatory] }
                 }}
             }).dump();
 
