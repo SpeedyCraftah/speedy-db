@@ -15,8 +15,7 @@ enum types: uint32_t {
 };
 
 struct table_column {
-    char name[32] = {0};
-    uint8_t _ = 0; // Name terminator.
+    char name[33] = {0};
     types type;
     uint32_t size;
     uint32_t index;
@@ -24,8 +23,7 @@ struct table_column {
 
 struct table_header {
     uint32_t magic_number;
-    char name[32] = {0};
-    uint8_t _ = 0; // Name terminator.
+    char name[33] = {0};
     uint32_t num_columns;
     table_column columns[];
 };
