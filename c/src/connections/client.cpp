@@ -45,7 +45,10 @@ const char* errors::text[] = {
     "There was insufficient memory available to perform the operation you requested.",
     "The handshake has failed due to an incorrect or invalid database password.",
     "The simulataneous connection limit has been exhausted. Please either disconnect client, ensure clients disconnect properly or increase the connection limit with max-connections.",
-    "The server requests that all clients establish an encrypted connection. Reconnect and supply a public key or adjust the server settings."
+    "The server requests that all clients establish an encrypted connection. Reconnect and supply a public key or adjust the server settings.",
+    "The account username you provided for creation has already been taken. Please pick another account username.",
+    "The name you have provided is an internally reserved name and cannot be used.",
+    "The number value you have provided is an internally reserved value and cannot be used."
 };
 
 // A function which sends data to the socket across a TCP stream which supports

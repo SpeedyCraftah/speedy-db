@@ -64,7 +64,10 @@ namespace errors {
         insufficient_memory,
         incorrect_password,
         too_many_connections,
-        traffic_encryption_mandatory
+        traffic_encryption_mandatory,
+        account_username_in_use,
+        name_reserved,
+        value_reserved
     };
 
     extern const char* text[];
