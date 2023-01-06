@@ -64,7 +64,7 @@ namespace errors {
         table_already_open,
         table_not_open,
         insufficient_memory,
-        incorrect_password,
+        invalid_account_credentials,
         too_many_connections,
         traffic_encryption_mandatory,
         account_username_in_use,

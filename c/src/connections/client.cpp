@@ -43,7 +43,7 @@ const char* errors::text[] = {
     "The table you are attempting to open has already been loaded.",
     "The table you are attempting to query has not been loaded. You must load a table before you can query it.",
     "There was insufficient memory available to perform the operation you requested.",
-    "The handshake has failed due to an incorrect or invalid database password.",
+    "The handshake has failed due to incorrect or invalid database account credentials.",
     "The simulataneous connection limit has been exhausted. Please either disconnect client, ensure clients disconnect properly or increase the connection limit with max-connections.",
     "The server requests that all clients establish an encrypted connection. Reconnect and supply a public key or adjust the server settings.",
     "The account username you provided for creation has already been taken. Please pick another account username.",
