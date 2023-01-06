@@ -232,33 +232,7 @@ void* client_connection_handle(void* arg) {
 
         // Authentication.
         // An object as future permission changes may be made.
-        if (server_config::password != nullptr) {
-            if (!data.contains("auth") || !data["auth"].is_object()) throw std::exception();
-            
-            auto auth = data["auth"];
-            
-            // Check for password field.
-            if (!auth.contains("password") || !auth["password"].is_string()) throw std::exception();
-
-            std::string password = auth["password"];
-
-            // Check if password matches.
-            if (password.compare(server_config::password) != 0) {
-                logerr("Socket with handle %d has been terminated due to failing authentication.", socket_id);
-
-                std::string handshake_failure = nlohmann::json({
-                    { "error", true },
-                    { "data", {
-                        { "code", errors::incorrect_password },
-                        { "text", errors::text[errors::incorrect_password] }
-                    }}
-                }).dump();
-
-                send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
-                
-                goto break_socket;
-            }
-        }
+        // login system here
 
         nlohmann::json handshake_object = nlohmann::json::object_t();
 

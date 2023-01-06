@@ -30,7 +30,6 @@ int server_config::version::major = 2;
 int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
-char* server_config::password = nullptr;
 bool server_config::root_account_enabled = false;
 unsigned int server_config::max_connections = 10;
 
@@ -40,8 +39,6 @@ void on_terminate() {
 }
 
 int main(int argc, char** args) {
-    bool no_password_acknowledged = false;
-
     if (argc > 1) {
         for (int i = 1; i < argc; i++) {
             std::string arg = args[i];
@@ -49,9 +46,7 @@ int main(int argc, char** args) {
             size_t c = arg.find_first_of('=');
 
             if (c == std::string::npos) {
-                if (arg == "no-password") {
-                    no_password_acknowledged = true;
-                } else if (arg == "force-encrypted-traffic") {
+                if (arg == "force-encrypted-traffic") {
                     server_config::force_encrypted_traffic = true;
                 } else if (arg == "enable-root-account") {
                     server_config::root_account_enabled = true;
@@ -76,12 +71,7 @@ int main(int argc, char** args) {
                 std::string value = arg.substr(c + 1);
 
                 try {
-                    if (name == "password") {
-                        // Set the password.
-                        server_config::password = (char*)malloc(value.length() + 1);
-                        server_config::password[value.length()] = 0;
-                        memcpy(server_config::password, value.c_str(), value.length());
-                    } else if (name == "max-connections") {
+                    if (name == "max-connections") {
                         server_config::max_connections = std::stoi(value);
                     } else if (name == "port") {
                         server_config::port = std::stoi(value);
@@ -94,15 +84,6 @@ int main(int argc, char** args) {
                     exit(1);
                 }
             }
-        }
-    }
-
-    if (server_config::password == nullptr) {
-        if (!no_password_acknowledged) {
-            logerr("There is no password set for the database. This will allow anyone to connect to the database and perform queries. Either set a password with the argument password=YOUR_PASSWORD or disable this protection feature with the no-password argument.");
-            exit(1);
-        } else {
-            logwarn("There is no password set for the database. Anyone can connect and perform queries on the database.");
         }
     }
 

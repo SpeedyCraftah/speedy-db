@@ -21,7 +21,6 @@ namespace server_config {
     }
 
     extern bool force_encrypted_traffic;
-    extern char* password;
     extern int port;
     extern unsigned int max_connections;
     extern bool root_account_enabled;
