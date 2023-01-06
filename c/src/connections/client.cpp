@@ -231,8 +231,57 @@ void* client_connection_handle(void* arg) {
         }
 
         // Authentication.
-        // An object as future permission changes may be made.
-        // login system here
+        if (!data.contains("auth") || !data["auth"].is_object()) throw std::exception();
+        if (
+            !data["auth"].contains("username") || !data["auth"]["username"].is_string() ||
+            !data["auth"].contains("password") || !data["auth"]["password"].is_string()
+        ) throw std::exception();
+
+        std::string username = data["auth"]["username"];
+        std::string password = data["auth"]["password"];
+
+        // Find the user account.
+        auto account_lookup = database_accounts->find(username);
+        if (account_lookup == database_accounts->end()) {
+            logerr("Socket with handle %d has been terminated due to providing an invalid username.", socket_id);
+
+            std::string handshake_failure = nlohmann::json({
+                { "error", true },
+                { "data", {
+                    { "code", errors::invalid_account_credentials },
+                    { "text", errors::text[errors::invalid_account_credentials] }
+                }}
+            }).dump();
+
+            send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
+            
+            goto break_socket;
+        }
+
+        // Get the account.
+        DatabaseAccount* account = account_lookup->second;
+
+        // Check if the provided password matches the account password hash.
+        if (!crypto::password::equal((char*)password.c_str(), &account->password)) {
+            logerr("Socket with handle %d has been terminated due to providing an invalid username.", socket_id);
+
+            std::string handshake_failure = nlohmann::json({
+                { "error", true },
+                { "data", {
+                    { "code", errors::invalid_account_credentials },
+                    { "text", errors::text[errors::invalid_account_credentials] }
+                }}
+            }).dump();
+
+            send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
+            
+            goto break_socket;
+        }
+
+        // Authentication has passed at this point.
+        // Add the account to the socket.
+        socket_data->account = account;
+        
 
         nlohmann::json handshake_object = nlohmann::json::object_t();
 
