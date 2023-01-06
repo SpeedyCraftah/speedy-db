@@ -5,6 +5,7 @@
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/dh.h>
+#include "../permissions/accounts.h"
 
 struct client_socket_data {
     struct version_t {
@@ -40,6 +41,7 @@ struct client_socket_data {
     config_t config;
     version_t version;  
     uint64_t last_packet_time = 0;
+    DatabaseAccount* account;
 };
 
 namespace errors {
