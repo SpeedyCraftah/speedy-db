@@ -7,7 +7,11 @@
 #include <stdlib.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
+#include <openssl/evp.h>
+#include <openssl/kdf.h>
+#include <openssl/rand.h>
 #include <time.h>
+#include "../permissions/accounts.h"
 
 DH* crypto::dh::create_session() {
     DH* dh = DH_new();
@@ -107,4 +111,29 @@ size_t crypto::aes256::decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, cons
     EVP_DecryptFinal(ctx, (unsigned char*)output + outlen1, &outlen2);
 
     return outlen1 + outlen2;
+}
+
+#define SALT_LENGTH 32
+#define HASH_LENGTH 32
+#define ITERATIONS 10000
+
+void crypto::password::hash(char* plaintext_password, AccountPassword* out) {
+    // Generate the 32-byte salt and load it into the salt pointer.
+    RAND_bytes((unsigned char*)out->salt, SALT_LENGTH);
+
+    // Hash the password with the salt and load the resulting hash into out_hash.
+    PKCS5_PBKDF2_HMAC(plaintext_password, strlen(plaintext_password), (unsigned char*)out->salt, SALT_LENGTH, ITERATIONS, EVP_sha256(), HASH_LENGTH, (unsigned char*)out->hash);
+}
+
+bool crypto::password::equal(char* plaintext_password, AccountPassword* hashed_password) {
+    char hash[32];
+
+    // Hash the plaintext password with the salt.
+    PKCS5_PBKDF2_HMAC(plaintext_password, strlen(plaintext_password), (unsigned char*)hashed_password->salt, SALT_LENGTH, ITERATIONS, EVP_sha256(), HASH_LENGTH, (unsigned char*)hash);
+
+    // Compare the passwords with a timing-attack resistant version of memcmp for added security.
+    int result = CRYPTO_memcmp(hash, hashed_password->hash, HASH_LENGTH);
+
+    // Return true if result == 0 (equal).
+    return result == 0;
 }

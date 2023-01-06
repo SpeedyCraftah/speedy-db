@@ -1,8 +1,11 @@
+#pragma once
+
 #include <openssl/ossl_typ.h>
 #include <stdint.h>
 #include <openssl/evp.h>
 #include <openssl/dh.h>
 #include <string>
+#include "../permissions/accounts.h"
 
 namespace crypto {
     namespace dh {
@@ -19,6 +22,11 @@ namespace crypto {
         inline size_t encode_res_length(size_t length) {
             return 16 + (length / 16) * 16;
         }
+    };
+
+    namespace password {
+        void hash(char* plaintext_password, AccountPassword* out);
+        bool equal(char* plaintext_password, AccountPassword* hashed_password);
     };
 
     void random_bytes(void* dest, size_t size);
