@@ -43,12 +43,14 @@ const char* errors::text[] = {
     "The table you are attempting to open has already been loaded.",
     "The table you are attempting to query has not been loaded. You must load a table before you can query it.",
     "There was insufficient memory available to perform the operation you requested.",
-    "The handshake has failed due to incorrect or invalid database account credentials.",
+    "The handshake has failed due to incorrect database account credentials provided.",
     "The simulataneous connection limit has been exhausted. Please either disconnect client, ensure clients disconnect properly or increase the connection limit with max-connections.",
     "The server requests that all clients establish an encrypted connection. Reconnect and supply a public key or adjust the server settings.",
     "The account username you provided for creation has already been taken. Please pick another account username.",
     "The name you have provided is an internally reserved name and cannot be used.",
-    "The number value you have provided is an internally reserved value and cannot be used."
+    "The number value you have provided is an internally reserved value and cannot be used.",
+    "The account username you provided does not belong to any account.",
+    "This account does not have access to the privileges required to perform this operation."
 };
 
 // A function which sends data to the socket across a TCP stream which supports
@@ -263,7 +265,7 @@ void* client_connection_handle(void* arg) {
 
         // Check if the provided password matches the account password hash.
         if (!crypto::password::equal((char*)password.c_str(), &account->password)) {
-            logerr("Socket with handle %d has been terminated due to providing an invalid username.", socket_id);
+            logerr("Socket with handle %d has been terminated due to providing an invalid password.", socket_id);
 
             std::string handshake_failure = nlohmann::json({
                 { "error", true },
@@ -311,7 +313,7 @@ void* client_connection_handle(void* arg) {
             } else throw std::exception();
             
         } else if (server_config::force_encrypted_traffic) {
-            logerr("Socket with handle %d has been terminated due to not being encrypted despite server requiring so", socket_id);
+            logerr("Socket with handle %d has been terminated due to not being encrypted despite server requiring it", socket_id);
 
             std::string handshake_failure = nlohmann::json({
                 { "error", true },
@@ -347,7 +349,7 @@ void* client_connection_handle(void* arg) {
         socket_data->version.major = data["version"]["major"];
         socket_data->version.minor = data["version"]["minor"];
 
-        log("Socket with handle %d performed a successful handshake with client version %d.%d", socket_id, socket_data->version.major, socket_data->version.minor);
+        log("Socket with handle %d and username '%s' performed a successful handshake with client version %d.%d", socket_id, account->username, socket_data->version.major, socket_data->version.minor);
     
         // Send back handshake success.
         handshake_object["version"] = {
