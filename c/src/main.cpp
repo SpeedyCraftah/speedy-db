@@ -2,6 +2,7 @@
 #include <exception>
 #include <openssl/rand.h>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/socket.h>
@@ -13,17 +14,21 @@
 #include <errno.h>
 #include <unordered_map>
 #include "connections/client.h"
+#include "crypto/crypto.h"
 #include "logging/logger.h"
 #include "connections/handler.h"
 #include "permissions/accounts.h"
 #include "storage/driver.h"
 #include <cstdlib>
+#include "misc/files.h"
 
 // Global variable holding the socket ID.
 int server_socket_id;
 int connections_size = 0;
 std::unordered_map<int, client_socket_data*>* socket_connections;
 std::unordered_map<std::string, active_table*>* open_tables;
+std::unordered_map<std::string, DatabaseAccount*>* database_accounts;
+FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
 int server_config::version::major = 2;
@@ -32,6 +37,7 @@ int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
 bool server_config::root_account_enabled = false;
 unsigned int server_config::max_connections = 10;
+char* server_config::root_password = nullptr;
 
 void on_terminate() {
     log("Killing socket and exiting");
@@ -39,6 +45,37 @@ void on_terminate() {
 }
 
 int main(int argc, char** args) {
+    // Check for first ever run.
+    if (!folder_exists("./data")) {
+        log("First boot detected - welcome to SpeedyDB");
+        
+        // Create data folder.
+        mkdir("./data", 0777);
+
+        // Create accounts storage file.
+        fclose(fopen("./data/accounts.bin", "a"));
+
+        table_column columns[3];
+
+        columns[0].index = 0;
+        strcpy(columns[0].name, "index");
+        columns[0].size = sizeof(size_t);
+        columns[0].type = types::long64;
+
+        columns[1].index = 1;
+        strcpy(columns[1].name, "table");
+        columns[1].size = 0;
+        columns[1].type = types::string;
+
+        columns[2].index = 2;
+        strcpy(columns[2].name, "permissions");
+        columns[2].size = sizeof(uint8_t);
+        columns[2].type = types::byte;
+
+        // Create account table permissions table.
+        create_table("--internal-table-permissions", columns, 3);
+    }
+
     if (argc > 1) {
         for (int i = 1; i < argc; i++) {
             std::string arg = args[i];
@@ -50,18 +87,18 @@ int main(int argc, char** args) {
                     server_config::force_encrypted_traffic = true;
                 } else if (arg == "enable-root-account") {
                     server_config::root_account_enabled = true;
-                    server_config::root_password = (char*)malloc(17);
-                    server_config::root_password[16] = 0;
+                    server_config::root_password = (char*)malloc(21);
+                    server_config::root_password[20] = 0;
 
                     // Generate random bytes for the password.
-                    RAND_bytes((unsigned char*)server_config::root_password, 16);
+                    RAND_bytes((unsigned char*)server_config::root_password, 20);
 
-                    // Convert the bytes to ASCII codes from 0 to Z.
-                    for (int i = 0; i < 16; i++) {
-                        server_config::root_password[i] = 48 + server_config::root_password[i] % 43;
+                    // Convert the bytes to ASCII codes from 0-Z.
+                    for (int i = 0; i < 20; i++) {
+                        server_config::root_password[i] = 48 + ((unsigned char)server_config::root_password[i] % 42);
                     }
 
-                    log("The session password for the root account is %s with the username being 'root'", server_config::root_password);
+                    log("The session password for the root account is \033[47m%s\033[0m with the username being 'root'", server_config::root_password);
                 } else {
                     logerr("One or more command line arguments provided are incorrect.");
                     exit(1);
@@ -100,6 +137,27 @@ int main(int argc, char** args) {
     open_tables = new std::unordered_map<std::string, active_table*>();
     database_accounts = new std::unordered_map<std::string, DatabaseAccount*>();
 
+    if (server_config::root_account_enabled) {
+        // Add the root account to the list.
+        DatabaseAccount* account = (DatabaseAccount*)malloc(sizeof(DatabaseAccount));
+
+        // Set all permissions to true.
+        memset(&account->permissions, 1, sizeof(account->permissions));
+        account->permissions.HIERARCHY_INDEX = 0;
+
+        // Set name to root.
+        strcpy(account->username, "root");
+
+        // Generate a password hash.
+        crypto::password::hash(server_config::root_password, &account->password);
+
+        // Add to map.
+        (*database_accounts)[std::string("root")] = account;
+    }
+
+    // Open the internal permissions table.
+    open_table("--internal-table-permissions");
+
     // Load the database accounts into memory.
     // Open the file containing the database accounts.
     database_accounts_handle = fopen("./data/accounts.bin", "r+b");
@@ -113,7 +171,9 @@ int main(int argc, char** args) {
 
     // Load accounts until the end of the file is reached.
     DatabaseAccount loaded_account;
-    while (fread(&loaded_account, sizeof(DatabaseAccount), 1, database_accounts_handle) == sizeof(DatabaseAccount)) {
+    while (fread_unlocked(&loaded_account, 1, sizeof(DatabaseAccount), database_accounts_handle) == sizeof(DatabaseAccount)) {
+        if (!loaded_account.active) continue;
+
         // Allocate memory for the account and copy it.
         DatabaseAccount* account = (DatabaseAccount*)malloc(sizeof(DatabaseAccount));
         memcpy(account, &loaded_account, sizeof(DatabaseAccount));
