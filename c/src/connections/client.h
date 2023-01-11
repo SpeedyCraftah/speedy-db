@@ -69,7 +69,9 @@ namespace errors {
         traffic_encryption_mandatory,
         account_username_in_use,
         name_reserved,
-        value_reserved
+        value_reserved,
+        username_not_found,
+        insufficient_privileges
     };
 
     extern const char* text[];
