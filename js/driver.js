@@ -47,6 +47,22 @@ module.exports = class SpeedDBClient extends EventEmitter {
         return decrypted;
     }
 
+    account(username) {
+        return {
+            create: (data) => {
+                return this._send_query({ op: 10, data: { username, ...data } });
+            }
+        };
+    }
+
+    get_all_table_names() {
+        return this._send_query({ op: 14, data: {} });
+    }
+
+    get_all_account_names() {
+        return this._send_query({ op: 15, data: {} });
+    }
+
     table(name) {
         return {
             create: (columns) => {
@@ -85,8 +101,16 @@ module.exports = class SpeedDBClient extends EventEmitter {
                 return this._send_query({ op: 8, data: { table: name } });
             },
 
-            rebuild: () => {
+            rebuild: (data) => {
                 return this._send_query({ op: 9, data: { table: name } });
+            },
+
+            set_permissions_for: (account, permissions) => {
+                return this._send_query({ op: 12, data: { table: name, username: account, permissions } });
+            },
+
+            get_permissions_for: (account) => {
+                return this._send_query({ op: 13, data: { table: name, username: account } });
             }
         };
     }
@@ -243,7 +267,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
                 // Send handshake.
                 let handshakeData = {
-                    version: { major: 1, minor: 0 },
+                    version: { major: 2, minor: 0 },
                     options: { short_attributes: false, error_text: true }
                 };
 
