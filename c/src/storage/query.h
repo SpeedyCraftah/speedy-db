@@ -15,6 +15,12 @@ namespace query_ops {
         update_all_records,
         close_table,
         rebuild_table,
+        create_database_account,
+        delete_database_account,
+        set_table_account_privileges,
+        fetch_account_table_permissions,
+        fetch_database_tables,
+        fetch_database_accounts,
         no_query_found_placeholder
     };
 }
