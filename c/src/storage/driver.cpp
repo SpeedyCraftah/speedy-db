@@ -8,10 +8,13 @@
 #include "../logging/logger.h"
 #include <mutex>
 #include "../deps/xxh/xxhash.h"
+#include "../main.h"
+#include "../permissions/permissions.h"
 
 // FIX BUG WHERE EMPTY ENTRIES RETURN AN EMPTY OBJECT NOT NULL
+// TODO - remove need to provide dynamic and column count in parameters
 
-std::mutex mutex;
+std::mutex driver_mutex;
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
@@ -19,17 +22,17 @@ std::mutex mutex;
 bool table_exists(const char* name) {
     struct stat info;
 
-    mutex.lock();
+    driver_mutex.lock();
     std::string path =  "./data/";
     path += name;
     int state = stat(path.c_str(), &info);
-    mutex.unlock();
+    driver_mutex.unlock();
 
     return state == 0;
 }
 
 void create_table(const char* table_name, table_column* columns, int length) {
-    mutex.lock();
+    driver_mutex.lock();
 
     // Create the data path.
     std::string path = std::string("./data/").append(table_name);
@@ -42,6 +45,7 @@ void create_table(const char* table_name, table_column* columns, int length) {
     std::string meta_path = std::string(path).append("meta.bin");
     std::string data_path = std::string(path).append("data.bin");
     std::string dynamic_path = std::string(path).append("dynamic.bin");
+    std::string permissions_path = std::string(path).append("permissions.bin");
 
     // Create a file containing the table metadata.
     fclose(fopen(meta_path.c_str(), "a"));
@@ -51,6 +55,9 @@ void create_table(const char* table_name, table_column* columns, int length) {
 
     // Create a file containing the table dynamic data.
     fclose(fopen(dynamic_path.c_str(), "a"));
+
+    // Create a file containing the table account permissions.
+    fclose(fopen(permissions_path.c_str(), "a"));
 
     // Open the file in r+w mode.
     FILE* handle = fopen(meta_path.c_str(), "r+b");
@@ -72,17 +79,21 @@ void create_table(const char* table_name, table_column* columns, int length) {
     // Close the file handle.
     fclose(handle);
 
-    mutex.unlock();
+    driver_mutex.unlock();
 }
 
+// Open table needs a separate mutex due to deadlocks.
+std::mutex driver_open_table_mutex;
+
 active_table* open_table(const char* table_name) {
-    mutex.lock();
+    driver_open_table_mutex.lock();
 
     // Create the data paths.
     std::string path = std::string("./data/").append(table_name);
     std::string meta_path = path + "/meta.bin";
     std::string data_path = path + "/data.bin";
     std::string dynamic_path = path + "/dynamic.bin";
+    std::string permissions_path = path + "/permissions.bin";
 
     // Open the files in r+w mode.
     FILE* header_handle = fopen(meta_path.c_str(), "r+b");
@@ -93,6 +104,9 @@ active_table* open_table(const char* table_name) {
 
     FILE* dynamic_handle = fopen(dynamic_path.c_str(), "r+b");
     fseek(dynamic_handle, 0, SEEK_SET);
+ 
+    FILE* permissions_handle = fopen(permissions_path.c_str(), "r+b");
+    fseek(permissions_handle, 0, SEEK_SET);
 
     // Create header output.
     table_header header;
@@ -111,8 +125,9 @@ active_table* open_table(const char* table_name) {
     // Read the columns and write them to the struct.
     fread_unlocked(table->header.columns, 1, sizeof(table_column) * header.num_columns, header_handle);
 
-    // Create a map to hold the columns.
+    // Create a map to hold the columns and permissions.
     table->columns = new std::map<std::string, table_column>();
+    table->permissions = new std::unordered_map<size_t, TablePermissions>();
 
     table->record_size += sizeof(record_header);
 
@@ -135,17 +150,33 @@ active_table* open_table(const char* table_name) {
     // Add to the map.
     (*open_tables)[table_name] = table;
 
-    // Close header handle.
-    fclose(header_handle);
+    // Deadlock prevention 
+    // Load the account permissions.
+    nlohmann::json query = {
+        { "where", {
+            { "table", table->header.name }
+        } }
+    };
+    nlohmann::json accounts = find_all_records("--internal-table-permissions", query, 1, 0, 1, false);
 
-    mutex.unlock();
+    // Add the accounts to the map.
+    for (const auto& account : accounts) {
+        uint8_t permissions = account["permissions"];
+        (*table->permissions)[account["index"]] = *(TablePermissions*)&permissions;
+    }
+
+    // Close handles which are not needed.
+    fclose(header_handle);
+    fclose(permissions_handle);
+
+    driver_open_table_mutex.unlock();
 
     return table;
 }
 
 void close_table(const char* table_name) {
     // Lock as threads may be writing to the table.
-    mutex.lock();
+    driver_mutex.lock();
 
     active_table* table = (*open_tables)[table_name];
 
@@ -154,13 +185,14 @@ void close_table(const char* table_name) {
     fclose(table->dynamic_handle);
 
     // Free the table.
-    free(table->columns);
+    delete table->columns;
+    delete table->permissions;
     free(table);
 
     // Remove from map.
     open_tables->erase(table_name);
 
-    mutex.unlock();
+    driver_mutex.unlock();
 }
 
 // Hashes any dynamic data provided in a where statement to accelerate seeking.
@@ -414,7 +446,7 @@ void insert_record(const char* table_name, nlohmann::json& data) {
     record_header* header = (record_header*)malloc(table->record_size);
     header->flags = record_flags::active | record_flags::dirty;
 
-    mutex.lock();
+    driver_mutex.lock();
 
     // Seek to the end.
     fseek(table->data_handle, 0, SEEK_END);
@@ -470,7 +502,7 @@ void insert_record(const char* table_name, nlohmann::json& data) {
     // Seek back to the start.
     fseek(table->data_handle, 0, SEEK_SET);
 
-    mutex.unlock();
+    driver_mutex.unlock();
 
     // Free memory buffer.
     free(header);
@@ -509,7 +541,7 @@ nlohmann::json find_one_record(const char* table_name, nlohmann::json& data, int
 
     nlohmann::json output_data = nlohmann::json::object_t();
 
-    mutex.lock();
+    driver_mutex.lock();
 
     long end_seek;
 
@@ -534,7 +566,7 @@ nlohmann::json find_one_record(const char* table_name, nlohmann::json& data, int
         // End of file has been reached as read has failed.
         if (fields_read != table->record_size) {
             free(header);
-            mutex.unlock();
+            driver_mutex.unlock();
             
             return nlohmann::json();
         }
@@ -560,7 +592,7 @@ nlohmann::json find_one_record(const char* table_name, nlohmann::json& data, int
     assemble_record_data(table, header, output_data, data, limited_results);
     
     free(header);
-    mutex.unlock();
+    driver_mutex.unlock();
 
     return output_data;
 }
@@ -573,7 +605,7 @@ nlohmann::json find_all_records(const char* table_name, nlohmann::json& data, in
 
     nlohmann::json output_data = nlohmann::json::array();
 
-    mutex.lock();
+    driver_mutex.lock();
 
     long end_seek;
 
@@ -609,7 +641,7 @@ nlohmann::json find_all_records(const char* table_name, nlohmann::json& data, in
         // End of file has been reached as read has failed.
         if (fields_read != table->record_size) {
             free(header);
-            mutex.unlock();
+            driver_mutex.unlock();
             
             return output_data;
         }
@@ -647,7 +679,7 @@ nlohmann::json find_all_records(const char* table_name, nlohmann::json& data, in
     }
 
     free(header);
-    mutex.unlock();
+    driver_mutex.unlock();
 
     return output_data;
 }
@@ -660,7 +692,7 @@ int erase_all_records(const char* table_name, nlohmann::json& data, int dynamic_
 
     int count = 0;
 
-    mutex.lock();
+    driver_mutex.lock();
 
     // Seek to start.
     fseek(table->data_handle, 0, SEEK_SET);
@@ -678,7 +710,7 @@ int erase_all_records(const char* table_name, nlohmann::json& data, int dynamic_
         // End of file has been reached as read has failed.
         if (fields_read != table->record_size) {
             free(header);
-            mutex.unlock();
+            driver_mutex.unlock();
             
             return count;
         }
@@ -712,7 +744,7 @@ int erase_all_records(const char* table_name, nlohmann::json& data, int dynamic_
     }
 
     free(header);
-    mutex.unlock();
+    driver_mutex.unlock();
 
     return count;
 }
@@ -725,7 +757,7 @@ int update_all_records(const char* table_name, nlohmann::json& data, int dynamic
 
     int count = 0;
 
-    mutex.lock();
+    driver_mutex.lock();
 
     // Seek to start.
     fseek(table->data_handle, 0, SEEK_SET);
@@ -743,7 +775,7 @@ int update_all_records(const char* table_name, nlohmann::json& data, int dynamic
         // End of file has been reached as read has failed.
         if (fields_read != table->record_size) {
             free(header);
-            mutex.unlock();
+            driver_mutex.unlock();
             
             return count;
         }
@@ -841,7 +873,7 @@ int update_all_records(const char* table_name, nlohmann::json& data, int dynamic
     }
 
     free(header);
-    mutex.unlock();
+    driver_mutex.unlock();
 
     return count;
 }
@@ -852,7 +884,7 @@ table_rebuild_statistics rebuild_table(char* table_name) {
 
     table_rebuild_statistics stats;
 
-    mutex.lock();
+    driver_mutex.lock();
 
     // Seek to start.
     fseek(table->data_handle, 0, SEEK_SET);
@@ -950,13 +982,13 @@ table_rebuild_statistics rebuild_table(char* table_name) {
     std::string safe_table_name = std::string(table_name);
 
     // Unlock mutex for table close.
-    mutex.unlock();
+    driver_mutex.unlock();
 
     // Close the table.
     close_table(safe_table_name.c_str());
 
     // Acquire mutex again.
-    mutex.lock();
+    driver_mutex.lock();
 
     // Delete old data files.
     remove(old_data_path.c_str());
@@ -967,7 +999,7 @@ table_rebuild_statistics rebuild_table(char* table_name) {
     rename(new_dynamic_path.c_str(), old_dynamic_path.c_str());
 
     // Unlock mutex again.
-    mutex.unlock();
+    driver_mutex.unlock();
 
     // Reopen the table.
     open_table(safe_table_name.c_str());

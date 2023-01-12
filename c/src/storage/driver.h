@@ -5,6 +5,7 @@
 #include <array>
 #include <unordered_map>
 #include "../deps/json.hpp"
+#include "../permissions/permissions.h"
 
 enum types: uint32_t {
     integer,
@@ -32,6 +33,7 @@ struct active_table {
     FILE* data_handle;
     FILE* dynamic_handle;
     std::map<std::string, table_column>* columns;
+    std::unordered_map<size_t, TablePermissions>* permissions;
     uint32_t hashed_column_count = 0;
     uint32_t record_data_size = 0;
     uint32_t record_size = 0;
