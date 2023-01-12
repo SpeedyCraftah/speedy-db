@@ -5,6 +5,7 @@
 #include "../main.h"
 #include "../crypto/crypto.h"
 #include "../storage/driver.h"
+#include "permissions.h"
 
 std::mutex accounts_mutex;
 
@@ -119,4 +120,22 @@ void delete_table_account_permissions(active_table* table, DatabaseAccount* acco
         } }
     };
     erase_all_records("--internal-table-permissions", query, 1, 1);
+}
+
+// Placeholder struct for all permissions.
+const TablePermissions placeholder_table_all_permissions = { 1, 1, 1, 1, 1 };
+const TablePermissions placeholder_table_no_permissions = { 0, 0, 0, 0, 0 };
+
+const TablePermissions* get_table_permissions_for_account(active_table* table, DatabaseAccount* account, bool include_table_admin) {
+    // If account is a table administrator, all permissions are granted regardless of table overrides.
+    if (include_table_admin && account->permissions.TABLE_ADMINISTRATOR) return &placeholder_table_all_permissions;
+
+    // Fetch the table permission overrides.
+    auto lookup = table->permissions->find(account->internal_index);
+
+    // If account has no overrides.
+    if (lookup == table->permissions->end()) return &placeholder_table_no_permissions;
+
+    // Return the table overrides.
+    return &lookup->second;
 }

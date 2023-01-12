@@ -25,6 +25,5 @@ void update_database_account(DatabaseAccount* account, DatabaseAccount new_accou
 void set_table_account_permissions(active_table* table, DatabaseAccount* account, TablePermissions& permissions);
 void delete_table_account_permissions(active_table* table, DatabaseAccount* account);
 
-
-
+const TablePermissions* get_table_permissions_for_account(active_table* table, DatabaseAccount* account, bool include_table_admin = true);
 
