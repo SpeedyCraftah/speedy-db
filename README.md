@@ -19,7 +19,7 @@ A database written in C++ and C which has been started due to me needing a proje
 - Privilege system which allows for accounts to have specific access and privileges for specific tables.
 - More data-types.
 - ACID compliance.
-- Switching to [simdjson](https://github.com/simdjson/simdjson) / [rapidjson](https://github.com/Tencent/rapidjson) (this was made by Tencent in case this worries you) for the JSON parsing library for better performance and memory footprint.
+- Switching to [simdjson](https://github.com/simdjson/simdjson) / [rapidjson](https://github.com/Tencent/rapidjson) for the JSON parsing library for better performance and memory footprint.
 - New data type - references to other records in same or different table.
 
 # Supported platforms
