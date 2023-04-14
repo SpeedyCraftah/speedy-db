@@ -19,7 +19,7 @@ A database written in C++ and C which has been started due to me needing a proje
 - Privilege system which allows for accounts to have specific access and privileges for specific tables.
 - More data-types.
 - ACID compliance.
-- Switching to [simdjson](https://github.com/simdjson/simdjson) / [rapidjson](https://github.com/Tencent/rapidjson) (this was made by Tencent in case this worries you) for the JSON parsing library for better performance and memory footprint.
+- Switching to [simdjson](https://github.com/simdjson/simdjson) / [rapidjson](https://github.com/Tencent/rapidjson) for the JSON parsing library for better performance and memory footprint.
 - New data type - references to other records in same or different table.
 
 # Supported platforms
@@ -101,3 +101,4 @@ const users = await db.table("users").findMany({
 This was originally meant to be written in C; however I have opted into using C++ as it allows for better looking and maintainable code as well as built-in structures and methods which would be a hassle to implement in C.
 I have also opted into using C APIs for most things such as TCP and disk access as they are less complicated and result in more than 2x better performance than equivalent C++ APIs.
 I also had to write this entire README twice as I accidentally clicked off when writing it on GitHub.
+ 
