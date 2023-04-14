@@ -57,6 +57,9 @@ void send_query_error(client_socket_data* socket_data, int nonce, int error) {
     });
 }
 
+// TODO - convert all to this
+#define query_error(error) send_query_error(socket_data, nonce, error)
+
 void process_query(client_socket_data* socket_data, const nlohmann::json& data) {
     int socket_id = socket_data->socket_id;
     bool short_attr = socket_data->config.short_attr;
@@ -86,13 +89,12 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
     }
 
     if (op == query_ops::create_table) {
+        if (!account->permissions.CREATE_TABLES) return query_error(errors::insufficient_privileges);
+
         if (
             !d.contains("name") || !d["name"].is_string() ||
             !d.contains("columns") || !d["columns"].is_object()
-        ) {
-            send_query_error(socket_data, nonce, errors::params_invalid);
-            return;
-        }
+        ) return query_error(errors::params_invalid);
 
         if (d["columns"].size() == 0) {
             send_query_error(socket_data, nonce, errors::params_invalid);
@@ -220,6 +222,9 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         send_query_response(socket_data, nonce);
     } else if (op == query_ops::create_database_account) {
+        // TODO - dangerous permission since users can create accounts with permissions they dont have effectively 
+        if (!account->permissions.CREATE_ACCOUNTS) return query_error(errors::insufficient_privileges);
+
         if (
             !d.contains("username") || !d["username"].is_string() ||
             !d.contains("password") || !d["password"].is_string() ||
@@ -230,6 +235,9 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             return;
         }
 
+        // If hierarchy index requested is more important or equal to current users index.
+        if ((unsigned int)d["hierarchy_index"] <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
+
         // Ensure all items in the permissions object are booleans.
         for (auto& item : d["permissions"]) {
             if (!item.is_boolean()) {
@@ -237,6 +245,9 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
                 return;
             }
         }
+
+        // Check if user is granting privileges which the current user does not have.
+        // TODO - implement this, need to upgrade C++ to C++17+ for constexpr
 
         std::string username = d["username"];
         std::string password = d["password"];
@@ -288,6 +299,8 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         // Send a successful response.
         send_query_response(socket_data, nonce);
     } else if (op == query_ops::delete_database_account) {
+        if (!account->permissions.DELETE_ACCOUNTS) return query_error(errors::insufficient_privileges);
+
         if (!d.contains("username") || !d["username"].is_string()) {
             send_query_error(socket_data, nonce, errors::params_invalid);
             return;
@@ -308,12 +321,18 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             return;
         }
 
-        DatabaseAccount* account = account_lookup->second;
-        delete_database_account(account);
+        DatabaseAccount* t_account = account_lookup->second;
+
+        // If target account has a higher or same hierarchy index.
+        if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
+
+        delete_database_account(t_account);
 
         // Send a successful response.
         send_query_response(socket_data, nonce);
     } else if (op == query_ops::set_table_account_privileges) {
+        if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(errors::insufficient_privileges);
+
         if (
             !d.contains("username") || !d["username"].is_string() ||
             !d.contains("permissions") || !d["permissions"].is_object() ||
@@ -360,7 +379,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             return;
         }
 
-        DatabaseAccount* account = account_lookup->second;
+        DatabaseAccount* t_account = account_lookup->second;
         active_table* table = table_lookup->second;
 
         // Create the table permissions.
@@ -369,6 +388,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         // Deny the permissions by default by setting everything to 0.
         memset(&permissions, 0, sizeof(permissions));
 
+        // TODO - could use with constexpr too
         // Set user specified permissions.
         if (d["permissions"].contains("VIEW")) permissions.VIEW = d["permissions"]["VIEW"];
         if (d["permissions"].contains("READ")) permissions.READ = d["permissions"]["READ"];
@@ -377,7 +397,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         if (d["permissions"].contains("ERASE")) permissions.ERASE = d["permissions"]["ERASE"];
 
         // Apply the table permissions to the account.
-        set_table_account_permissions(table, account, permissions);
+        set_table_account_permissions(table, t_account, permissions);
 
         // Send a successful response.
         send_query_response(socket_data, nonce);
@@ -413,11 +433,14 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             return;
         }
 
-        DatabaseAccount* account = account_lookup->second;
+        DatabaseAccount* t_account = account_lookup->second;
         active_table* table = table_lookup->second;
 
+        // If account cannot view the table.
+        if (!get_table_permissions_for_account(table, account)->VIEW) return query_error(errors::table_not_open);
+
         // Retrieve the permissions.
-        const TablePermissions* permissions = get_table_permissions_for_account(table, account, false);
+        const TablePermissions* permissions = get_table_permissions_for_account(table, t_account, false);
 
         // Construct the account permissions for the table.
         nlohmann::json data = {
@@ -444,6 +467,8 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             send_query_error(socket_data, nonce, errors::internal);
             return;
         }
+
+        // TODO - check if account has permission to view the table
 
         // Iterate over every directory.
         while ((ent = readdir(dir)) != NULL) {
@@ -505,7 +530,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {
-        send_query_error(socket_data, nonce, errors::table_not_found);
+        send_query_error(socket_data, nonce, errors::table_not_open);
         return;
     }
 
