@@ -402,6 +402,8 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         // Send a successful response.
         send_query_response(socket_data, nonce);
     } else if (op == query_ops::fetch_account_table_permissions) {
+        // TODO - do not allow unprivileged users to view permissions?
+
         if (
             !d.contains("username") || !d["username"].is_string() ||
             !d.contains("table") || !d["table"].is_string()
@@ -436,9 +438,6 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         DatabaseAccount* t_account = account_lookup->second;
         active_table* table = table_lookup->second;
 
-        // If account cannot view the table.
-        if (!get_table_permissions_for_account(table, account)->VIEW) return query_error(errors::table_not_open);
-
         // Retrieve the permissions.
         const TablePermissions* permissions = get_table_permissions_for_account(table, t_account, false);
 
@@ -467,8 +466,6 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             send_query_error(socket_data, nonce, errors::internal);
             return;
         }
-
-        // TODO - check if account has permission to view the table
 
         // Iterate over every directory.
         while ((ent = readdir(dir)) != NULL) {

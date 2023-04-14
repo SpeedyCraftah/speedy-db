@@ -35,9 +35,9 @@ struct DatabasePermissions {
 };
 
 struct TablePermissions {
-    // Allows the account to be able to see the table in the list of tables and be able to interact with it in any way.
-    // If this permission is denied, the table will not be visible to the account and will return error "table_not_found" on query.
-    // However, queries such as create_table will still return errors such as table_name_taken.
+    // Allows the account to be able see characteristics of the table and interact with it in any way.
+    // If this permission is denied, any query specifically on the table will be denied.
+    // The table will still show up for the account when querying all tables.
     // This will superceed every other table permission.
     bool VIEW : 1;
 
