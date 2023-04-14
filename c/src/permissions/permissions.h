@@ -44,7 +44,7 @@ struct TablePermissions {
     // Allows the account to be able to read and conditionally query all records in a table.
     bool READ : 1;
 
-    // ALlows the account to be able to write and insert records into the table.
+    // Allows the account to be able to write and insert records into the table.
     bool WRITE : 1;
 
     // Allows the account to be able to update records and columns in the table.
