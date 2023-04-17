@@ -308,12 +308,6 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         std::string username = d["username"];
 
-        // If username is reserved by being called root.
-        if (username == "root") {
-            send_query_error(socket_data, nonce, errors::name_reserved);
-            return;
-        }
-
         // Find the account.
         auto account_lookup = database_accounts->find(username);
         if (account_lookup == database_accounts->end()) {
@@ -330,6 +324,32 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send a successful response.
         send_query_response(socket_data, nonce);
+    } else if (op == query_ops::fetch_account_privileges) {
+        if (!d.contains("username") || !d["username"].is_string()) return query_error(errors::params_invalid);
+
+        std::string username = d["username"];
+
+        // Find the account.
+        auto account_lookup = database_accounts->find(username);
+        if (account_lookup == database_accounts->end()) {
+            send_query_error(socket_data, nonce, errors::username_not_found);
+            return;
+        }
+
+        DatabaseAccount* t_account = account_lookup->second;
+
+        nlohmann::json permissions = nlohmann::json::object();
+        permissions["CREATE_ACCOUNTS"] = (bool)t_account->permissions.CREATE_ACCOUNTS;
+        permissions["DELETE_ACCOUNTS"] = (bool)t_account->permissions.DELETE_ACCOUNTS;
+        permissions["UPDATE_ACCOUNTS"] = (bool)t_account->permissions.UPDATE_ACCOUNTS;
+        permissions["CREATE_TABLES"] = (bool)t_account->permissions.CREATE_TABLES;
+        permissions["DELETE_TABLES"] = (bool)t_account->permissions.DELETE_TABLES;
+        permissions["OPEN_CLOSE_TABLES"] = (bool)t_account->permissions.OPEN_CLOSE_TABLES;
+        permissions["TABLE_ADMINISTRATOR"] = (bool)t_account->permissions.TABLE_ADMINISTRATOR;
+        permissions["HIERARCHY_INDEX"] = t_account->permissions.HIERARCHY_INDEX;
+
+        // Send the response.
+        send_query_response(socket_data, nonce, permissions);
     } else if (op == query_ops::set_table_account_privileges) {
         if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(errors::insufficient_privileges);
 

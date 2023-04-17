@@ -21,6 +21,7 @@ namespace query_ops {
         fetch_account_table_permissions,
         fetch_database_tables,
         fetch_database_accounts,
+        fetch_account_privileges,
         no_query_found_placeholder
     };
 }
