@@ -338,6 +338,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         DatabaseAccount* t_account = account_lookup->second;
 
+        // Convert the permission data into an object that can be sent.
         nlohmann::json permissions = nlohmann::json::object();
         permissions["CREATE_ACCOUNTS"] = (bool)t_account->permissions.CREATE_ACCOUNTS;
         permissions["DELETE_ACCOUNTS"] = (bool)t_account->permissions.DELETE_ACCOUNTS;
@@ -547,7 +548,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {
-        send_query_error(socket_data, nonce, errors::table_not_open);
+        send_query_error(socket_data, nonce, errors::insufficient_privileges);
         return;
     }
 
@@ -634,8 +635,10 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             return;
         }
 
+        // Which direction to read data in (end-start / start-end).
         int seek_direction = 1;
 
+        // Allow user to specify a custom seek direction (default is start-end).
         if (d.contains("seek_direction")) {
             if (!d["seek_direction"].is_number_integer()) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
@@ -652,6 +655,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         bool limited_results = false;
 
+        // Allow user to specify which columns they want returned in the query.
         if (d.contains("return")) {
             limited_results = true;
 
@@ -739,8 +743,10 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             return;
         }
 
+        // Which direction to read data in (end-start / start-end).
         int seek_direction = 1;
 
+        // Allow user to specify a custom seek direction (default is start-end).
         if (d.contains("seek_direction")) {
             if (!d["seek_direction"].is_number_integer()) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
@@ -768,6 +774,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         bool limited_results = false;
 
+        // Allow user to specify which columns they want returned in the query.
         if (d.contains("return")) {
             limited_results = true;
 

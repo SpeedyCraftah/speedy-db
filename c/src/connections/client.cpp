@@ -44,7 +44,7 @@ const char* errors::text[] = {
     "The table you are attempting to query has not been loaded. You must load a table before you can query it.",
     "There was insufficient memory available to perform the operation you requested.",
     "The handshake has failed due to incorrect database account credentials provided.",
-    "The simulataneous connection limit has been exhausted. Please either disconnect client, ensure clients disconnect properly or increase the connection limit with max-connections.",
+    "The simulataneous connection limit has been exhausted. Please either disconnect clients, ensure clients disconnect properly or increase the connection limit with max-connections.",
     "The server requests that all clients establish an encrypted connection. Reconnect and supply a public key or adjust the server settings.",
     "The account username you provided for creation has already been taken. Please pick another account username.",
     "The name you have provided is an internally reserved name and cannot be used.",
@@ -232,7 +232,7 @@ void* client_connection_handle(void* arg) {
             goto break_socket;
         }
 
-        // Authentication.
+        // If the handshake object has an auth object which holds username and password.
         if (!data.contains("auth") || !data["auth"].is_object()) throw std::exception();
         if (
             !data["auth"].contains("username") || !data["auth"]["username"].is_string() ||
@@ -466,7 +466,7 @@ void* client_connection_handle(void* arg) {
         size_t size = remaining_size;
 
         // Check if the buffer has been allocated.
-        if (buffer == 0) {
+        if (buffer == nullptr) {
             send_json(socket_data, {
                 { short_attr ? "e" : "error", true },
                 { short_attr ? "d" : "data", {

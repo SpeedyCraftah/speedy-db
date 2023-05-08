@@ -32,6 +32,7 @@ void accept_connections() {
             continue;
         }
 
+        // If the maximum connections is limited and has been exhausted.
         if (server_config::max_connections != 0 && socket_connections->size() >= server_config::max_connections) {
             logerr("A connection attempt has been refused due to no more connection slots");
             close(client_id);

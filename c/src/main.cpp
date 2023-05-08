@@ -49,24 +49,29 @@ int main(int argc, char** args) {
     if (!folder_exists("./data")) {
         log("First boot detected - welcome to SpeedyDB");
         
-        // Create data folder.
+        // Create data folder with standard R/W permissions.
         mkdir("./data", 0777);
 
         // Create accounts storage file.
         fclose(fopen("./data/accounts.bin", "a"));
 
+        // Create the table permissions table which holds permission data on all tables.
+
         table_column columns[3];
 
+        // Unique identifier of permission entry.
         columns[0].index = 0;
         strcpy(columns[0].name, "index");
         columns[0].size = sizeof(size_t);
         columns[0].type = types::long64;
 
+        // Name of target table.
         columns[1].index = 1;
         strcpy(columns[1].name, "table");
         columns[1].size = 0;
         columns[1].type = types::string;
 
+        // Permission bitfield of entry.
         columns[2].index = 2;
         strcpy(columns[2].name, "permissions");
         columns[2].size = sizeof(uint8_t);
@@ -76,16 +81,21 @@ int main(int argc, char** args) {
         create_table("--internal-table-permissions", columns, 3);
     }
 
+    // If the user provided some arguments.
     if (argc > 1) {
+        // Iterate through all arguments.
         for (int i = 1; i < argc; i++) {
             std::string arg = args[i];
             
+            // Extract argument in the format of NAME=VALUE.
             size_t c = arg.find_first_of('=');
 
+            // If the argument has no value, indicating a flag.
             if (c == std::string::npos) {
                 if (arg == "force-encrypted-traffic") {
                     server_config::force_encrypted_traffic = true;
                 } else if (arg == "enable-root-account") {
+                    // Create the details for the temporary root account.
                     server_config::root_account_enabled = true;
                     server_config::root_password = (char*)malloc(21);
                     server_config::root_password[20] = 0;
@@ -104,6 +114,7 @@ int main(int argc, char** args) {
                     exit(1);
                 }
             } else {
+                // Extract name and value of argument.
                 std::string name = arg.substr(0, c);
                 std::string value = arg.substr(c + 1);
 
@@ -142,7 +153,7 @@ int main(int argc, char** args) {
         DatabaseAccount* account = (DatabaseAccount*)malloc(sizeof(DatabaseAccount));
 
         // Set all permissions to true.
-        memset(&account->permissions, 1, sizeof(account->permissions));
+        memset(&account->permissions, 0xFF, sizeof(account->permissions));
         account->permissions.HIERARCHY_INDEX = 0;
 
         // Set name to root.
@@ -224,6 +235,7 @@ int main(int argc, char** args) {
     int listen_status = listen(server_socket_id, 10);
     if (listen_status == -1) {
         logerr("Unable to listen to binded port %d (errno %d)", server_config::port, errno);
+        exit(1);
     }
 
     accept_connections();
