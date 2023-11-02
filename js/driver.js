@@ -51,6 +51,14 @@ module.exports = class SpeedDBClient extends EventEmitter {
         return {
             create: (data) => {
                 return this._send_query({ op: 10, data: { username, ...data } });
+            },
+            
+            delete: () => {
+                return this._send_query({ op: 11, data: { username } });
+            },
+            
+            get_permissions: () => {
+                return this._send_query({ op: 16, data: { username } });
             }
         };
     }
@@ -184,7 +192,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
             if (length === 0) {
                 // Send back keep-alive packet to signify the connection is still alive.
                 this.socket.write(keepAlivePacket);
-
+                
                 // If packet has more data.
                 if (data.length > 4) {
                     this._on_data(data.slice(4));
