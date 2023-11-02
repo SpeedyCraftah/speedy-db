@@ -1,6 +1,9 @@
 /test
-/js/index2.mjs
 /c/data/*
 /c/bin/*
 /Rubbish
 node_modules
+
+js/*
+!js/driver.js
+!js/package.json
