@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <mutex>
 #include "driver.h"
 
 class ActiveTable {
@@ -11,6 +12,8 @@ class ActiveTable {
     private:
         FILE* data_handle;
         FILE* dynamic_handle;
+
+        std::mutex op_mutex;
 
         std::map<std::string, table_column> columns;
         std::unordered_map<size_t, TablePermissions>* permissions = nullptr;
