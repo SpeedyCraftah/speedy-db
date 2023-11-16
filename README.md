@@ -20,6 +20,7 @@ A database written in C++ and C which has been started due to me needing a proje
 - ACID compliance.
 - Switching to [simdjson](https://github.com/simdjson/simdjson) / [rapidjson](https://github.com/Tencent/rapidjson) for the JSON parsing library for better performance and memory footprint.
 - New data type - references to other records in same or different table.
+- Accelerated unindexed reads by accessing the disk for records in bulk.
 
 # Supported platforms
 - Linux (no windows yet sorry).
