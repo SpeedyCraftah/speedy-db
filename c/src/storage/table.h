@@ -4,6 +4,9 @@
 #include <mutex>
 #include "driver.h"
 
+#define HASH_SEED 8293236
+#define TABLE_MAGIC_NUMBER 3829859236
+
 class ActiveTable {
     public:
         ActiveTable(const char* table_name, bool is_internal);
@@ -13,6 +16,8 @@ class ActiveTable {
         nlohmann::json find_all_records(nlohmann::json& data, int dynamic_count, int limit, int seek_direction, bool limited_results);
 
         int erase_all_records(nlohmann::json& data, int dynamic_count, int limit);
+        int update_all_records(nlohmann::json& data, int dynamic_count, int limit);
+        table_rebuild_statistics rebuild_table();
 
     private:
         FILE* data_handle;

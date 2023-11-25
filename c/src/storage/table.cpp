@@ -4,10 +4,8 @@
 #include <unordered_map>
 #include "../deps/xxh/xxhash.h"
 
-#define HASH_SEED 8293236
-#define TABLE_MAGIC_NUMBER 3829859236
-
 // TODO - add mutex
+// TODO - preallocate record header for each handle instead of mallocing and freeing on every query
 
 ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_internal(is_internal) {
     // Create the data paths.
