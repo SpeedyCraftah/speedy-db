@@ -286,3 +286,133 @@ void ActiveTable::assemble_record_data(record_header* header, nlohmann::json& ou
         }
     }
 }
+
+table_rebuild_statistics ActiveTable::rebuild_table() {
+    record_header* header = (record_header*)malloc(this->record_size);
+
+    table_rebuild_statistics stats;
+
+    this->op_mutex.lock();
+
+    // Seek to start.
+    fseek(this->data_handle, 0, SEEK_SET);
+
+    // Create temporary paths.
+    // Create the data path.
+    std::string path = std::string("./data/").append(this->header.name).append("/");
+    
+    // Create paths.
+    std::string old_data_path = std::string(path).append("data.bin");
+    std::string old_dynamic_path = std::string(path).append("dynamic.bin");
+    std::string new_data_path = std::string(path).append("data.new.bin");
+    std::string new_dynamic_path = std::string(path).append("dynamic.new.bin");
+
+    // Create a file containing the table data.
+    fclose(fopen(new_data_path.c_str(), "a"));
+
+    // Create a file containing the table dynamic data.
+    fclose(fopen(new_dynamic_path.c_str(), "a"));
+
+    // Open the files in r+w mode.
+    FILE* new_data_handle = fopen(new_data_path.c_str(), "r+b");
+    FILE* new_dynamic_handle = fopen(new_dynamic_path.c_str(), "r+b");
+
+    // Seek the new handles to correct position.
+    fseek(new_dynamic_handle, 0, SEEK_END);
+    fseek(new_data_handle, 0, SEEK_END);
+
+    while (true) {
+        size_t header_location = ftell(this->data_handle);
+
+        // Read the header of the record.
+        int fields_read = fread_unlocked(header, 1, this->record_size, this->data_handle);
+
+        // End of file has been reached as read has failed.
+        if (fields_read != this->record_size) break;
+
+        // If the block is empty, skip to the next one.
+        if ((header->flags & record_flags::active) == 0) {
+            stats.dead_record_count++;
+            continue;
+        }
+
+        stats.record_count++;
+        
+        // Check if any dynamic columns need rebuilding.
+        for (uint32_t i = 0; i < this->header.num_columns; i++) {
+            table_column& column = this->header.columns[i];
+
+            // Get the location of the column in the buffer.
+            uint8_t* base = header->data + calculate_offset(column.index);
+
+            // If the column is dynamic.
+            if (column.type == types::string) {
+                // Get information about the dynamic data.
+                hashed_entry* entry = (hashed_entry*)base;
+
+                // Allocate space for the dynamic data loading.
+                dynamic_record* dynamic_data = (dynamic_record*)malloc(sizeof(dynamic_record) + entry->size + 1);
+                
+                // Seek to the dynamic data.
+                fseek(this->dynamic_handle, entry->record_location, SEEK_SET);
+
+                // Read the dynamic data to the allocated space.
+                fread_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size + 1, this->dynamic_handle);
+
+                // Update short string statistic if short.
+                if (entry->size + 1 != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
+
+                // Update the record data for both records.
+                dynamic_data->record_location = ftell(new_data_handle);
+                dynamic_data->physical_size = entry->size + 1 + sizeof(dynamic_record);
+                entry->record_location = ftell(new_dynamic_handle);
+
+                // Write the dynamic data to the new file.
+                fwrite_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size + 1, new_dynamic_handle);
+
+                // Free the allocated dynamic data as it is not needed anymore.
+                free(dynamic_data);
+            }
+        }
+
+        // Write the record to the new data file.
+        fwrite(header, 1, this->record_size, new_data_handle);
+
+        fseek(new_dynamic_handle, 0, SEEK_END);
+        fseek(new_data_handle, 0, SEEK_END);
+    }
+
+    // Close new files.
+    fclose(new_data_handle);
+    fclose(new_dynamic_handle);
+
+    // Temporarily copy table name.
+    std::string safe_table_name = std::string(this->header.name);
+
+    // Unlock mutex for table close.
+    this->op_mutex.unlock();
+
+    // Close the table.
+    close_table(safe_table_name.c_str());
+
+    // Acquire mutex again.
+    this->op_mutex.lock();
+
+    // Delete old data files.
+    remove(old_data_path.c_str());
+    remove(old_dynamic_path.c_str());
+
+    // Remove new files to old ones.
+    rename(new_data_path.c_str(), old_data_path.c_str());
+    rename(new_dynamic_path.c_str(), old_dynamic_path.c_str());
+
+    // Unlock mutex again.
+    this->op_mutex.unlock();
+
+    // Reopen the table.
+    open_table(safe_table_name.c_str());
+
+    free(header);
+
+    return stats;
+}

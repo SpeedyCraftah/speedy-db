@@ -17,6 +17,7 @@ class ActiveTable {
 
         int erase_all_records(nlohmann::json& data, int dynamic_count, int limit);
         int update_all_records(nlohmann::json& data, int dynamic_count, int limit);
+        void insert_record(nlohmann::json& data);
         table_rebuild_statistics rebuild_table();
 
     private:
