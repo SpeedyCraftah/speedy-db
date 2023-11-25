@@ -12,6 +12,8 @@ class ActiveTable {
         nlohmann::json find_one_record(nlohmann::json& data, int dynamic_count, int seek_direction, bool limited_results);
         nlohmann::json find_all_records(nlohmann::json& data, int dynamic_count, int limit, int seek_direction, bool limited_results);
 
+        int erase_all_records(nlohmann::json& data, int dynamic_count, int limit);
+
     private:
         FILE* data_handle;
         FILE* dynamic_handle;
