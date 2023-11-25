@@ -18,6 +18,7 @@ A database written in C++ and C which has been started due to me needing a proje
 - Write caching and deferring writes intelligently.
 - Indexing of tables to allow for near O(1) speed of queries regardless of the size of the table.
 - More data-types.
+- - Large data type used for optimised transfers and caching procedures of data in the range of KB-GB.
 - ACID compliance.
 - Switching to [simdjson](https://github.com/simdjson/simdjson) / [rapidjson](https://github.com/Tencent/rapidjson) for the JSON parsing library for better performance and memory footprint.
 - New data type - references to other records in same or different table.
