@@ -90,6 +90,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
     if (op == query_ops::no_operation) {
         send_query_response(socket_data, nonce);
+        return;
     }
 
     else if (op == query_ops::create_table) {
@@ -188,6 +189,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         free(columns);
         
         send_query_response(socket_data, nonce);
+        return;
     } else if (op == query_ops::open_table) {
         if (!account->permissions.OPEN_CLOSE_TABLES) {
             send_query_error(socket_data, nonce, errors::insufficient_privileges);
@@ -225,6 +227,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         log("Table %s has been loaded into memory", name.c_str());
 
         send_query_response(socket_data, nonce);
+        return;
     } else if (op == query_ops::create_database_account) {
         // TODO - dangerous permission since users can create accounts with permissions they dont have effectively 
         if (!account->permissions.CREATE_ACCOUNTS) return query_error(errors::insufficient_privileges);
@@ -302,6 +305,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send a successful response.
         send_query_response(socket_data, nonce);
+        return;
     } else if (op == query_ops::delete_database_account) {
         if (!account->permissions.DELETE_ACCOUNTS) return query_error(errors::insufficient_privileges);
 
@@ -328,6 +332,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send a successful response.
         send_query_response(socket_data, nonce);
+        return;
     } else if (op == query_ops::fetch_account_privileges) {
         if (!d.contains("username") || !d["username"].is_string()) return query_error(errors::params_invalid);
 
@@ -355,6 +360,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send the response.
         send_query_response(socket_data, nonce, permissions);
+        return;
     } else if (op == query_ops::set_table_account_privileges) {
         if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(errors::insufficient_privileges);
 
@@ -426,6 +432,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send a successful response.
         send_query_response(socket_data, nonce);
+        return;
     } else if (op == query_ops::fetch_account_table_permissions) {
         // TODO - do not allow unprivileged users to view permissions?
 
@@ -477,6 +484,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send the response.
         send_query_response(socket_data, nonce, data);
+        return;
     } else if (op == query_ops::fetch_database_tables) {
         // Create an array to hold the table names.
         nlohmann::json tables = nlohmann::json::array();
@@ -513,6 +521,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send the response.
         send_query_response(socket_data, nonce, tables);
+        return;
     } else if (op == query_ops::fetch_database_accounts) {
         // Create an array to hold the account names.
         nlohmann::json accounts = nlohmann::json::array();
@@ -525,6 +534,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Send the response.
         send_query_response(socket_data, nonce, accounts);
+        return;
     }
 
 
