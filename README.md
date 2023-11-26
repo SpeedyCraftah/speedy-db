@@ -20,7 +20,6 @@ A database written in C++ and C which has been started due to me needing a proje
 - More data-types.
 - - Large data type used for optimised transfers and caching procedures of data in the range of KB-GB.
 - ACID compliance.
-- Switching to [simdjson](https://github.com/simdjson/simdjson) / [rapidjson](https://github.com/Tencent/rapidjson) for the JSON parsing library for better performance and memory footprint.
 - New data type - references to other records in same or different table.
 - Accelerated unindexed reads by accessing the disk for records in bulk.
 
@@ -32,7 +31,7 @@ A database written in C++ and C which has been started due to me needing a proje
 - Password provided by the client is sent in the handshake stage which is not encrypted.
 
 # Libraries used
-- [nlohmann json](https://github.com/nlohmann/json) for JSON parsing.
+- [simdjson](https://github.com/simdjson/simdjson) for accelerated JSON parsing.
 - [xxHash](https://github.com/Cyan4973/xxHash) for fast hashing of data.
 - [OpenSSL](https://github.com/openssl/openssl) for cryptography.
 - Everything else was written by me.
