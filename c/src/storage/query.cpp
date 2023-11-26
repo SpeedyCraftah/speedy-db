@@ -2,7 +2,6 @@
 
 #include "../deps/json.hpp"
 #include "../connections/client.h"
-#include "driver.h"
 #include <regex>
 #include <sys/types.h>
 #include <thread>
@@ -13,6 +12,7 @@
 #include <iostream>
 #include "../main.h"
 #include "../misc/valid_string.h"
+#include "table.h"
 #include <dirent.h>
 
 const char* type_int_to_string(types type) {
@@ -216,7 +216,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         // Open the table.
-        open_table(name.c_str());
+        new ActiveTable(name.c_str(), false);
 
         log("Table %s has been loaded into memory", name.c_str());
 
@@ -401,7 +401,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         DatabaseAccount* t_account = account_lookup->second;
-        active_table* table = table_lookup->second;
+        ActiveTable* table = table_lookup->second;
 
         // Create the table permissions.
         TablePermissions permissions;
@@ -457,7 +457,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         DatabaseAccount* t_account = account_lookup->second;
-        active_table* table = table_lookup->second;
+        ActiveTable* table = table_lookup->second;
 
         // Retrieve the permissions.
         const TablePermissions* permissions = get_table_permissions_for_account(table, t_account, false);
@@ -541,7 +541,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         return;
     }
 
-    active_table* table = (*open_tables)[name];
+    ActiveTable* table = (*open_tables)[name];
 
     // Get the permissions available for the user in the table.
     const TablePermissions* table_permissions = get_table_permissions_for_account(table, account);
@@ -561,7 +561,8 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         // Iterate over columns.
         for (int i = 0; i < table->header.num_columns; i++) {
-            table_column& column = table->header.columns[i];
+            table_column& column = table->header_columns[i];
+            volatile int s = 5;
 
             json["columns"][column.name] = {
                 { "name", column.name },
@@ -579,7 +580,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         // Close the table.
-        close_table(name.c_str());
+        delete (*open_tables)[name];
 
         log("Table %s has been unloaded from memory", name.c_str());
 
@@ -601,13 +602,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             auto column_n = item.key();
 
             // Check if column exists.
-            if (table->columns->count(column_n) == 0) {
+            if (table->columns.count(column_n) == 0) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
             auto column_d = item.value();
-            table_column& column = (*table->columns)[column_n];
+            table_column& column = table->columns[column_n];
 
             // Validate type.
             if (
@@ -622,7 +623,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             }
         }
 
-        insert_record(name.c_str(), d["columns"]);
+        table->insert_record(d["columns"]);
         send_query_response(socket_data, nonce);
     } else if (op == query_ops::find_one_record) {
         if (!table_permissions->READ) {
@@ -672,7 +673,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
                 }
 
                 // Check if column exists.
-                if (table->columns->count(column) == 0) {
+                if (table->columns.count(column) == 0) {
                     send_query_error(socket_data, nonce, errors::params_invalid);
                     return;
                 }
@@ -686,13 +687,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             auto column_n = item.key();
 
             // Check if column exists.
-            if (table->columns->count(column_n) == 0) {
+            if (table->columns.count(column_n) == 0) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
             auto column_d = item.value();
-            table_column& column = (*table->columns)[column_n];
+            table_column& column = table->columns[column_n];
 
             if (column_d.is_object()) {
                 // Check if column is a number.
@@ -730,7 +731,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             }
         }
 
-        nlohmann::json result = find_one_record(name.c_str(), d, dynamic_count, seek_direction, limited_results);
+        nlohmann::json result = table->find_one_record(d, dynamic_count, seek_direction, limited_results);
         send_query_response(socket_data, nonce, result);
     } else if (op == query_ops::find_all_records) {
         if (!table_permissions->READ) {
@@ -791,7 +792,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
                 }
 
                 // Check if column exists.
-                if (table->columns->count(column) == 0) {
+                if (table->columns.count(column) == 0) {
                     send_query_error(socket_data, nonce, errors::params_invalid);
                     return;
                 }
@@ -810,13 +811,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
                 auto column_n = item.key();
 
                 // Check if column exists.
-                if (table->columns->count(column_n) == 0) {
+                if (table->columns.count(column_n) == 0) {
                     send_query_error(socket_data, nonce, errors::params_invalid);
                     return;
                 }
 
                 auto column_d = item.value();
-                table_column& column = (*table->columns)[column_n];
+                table_column& column = table->columns[column_n];
 
                 // Validate type.
                 if (column_d.is_object()) {
@@ -857,13 +858,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             auto column_n = item.key();
 
             // Check if column exists.
-            if (table->columns->count(column_n) == 0) {
+            if (table->columns.count(column_n) == 0) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
             auto column_d = item.value();
-            table_column& column = (*table->columns)[column_n];
+            table_column& column = table->columns[column_n];
 
             // Validate type.
             if (column_d.is_object()) {
@@ -902,7 +903,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             }
         }
 
-        nlohmann::json result = find_all_records(name.c_str(), d, dynamic_count, limit, seek_direction, limited_results);
+        nlohmann::json result = table->find_all_records(d, dynamic_count, limit, seek_direction, limited_results);
         send_query_response(socket_data, nonce, result);
     } else if (op == query_ops::erase_all_records) {
         if (!table_permissions->ERASE) {
@@ -933,13 +934,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             auto column_n = item.key();
 
             // Check if column exists.
-            if (table->columns->count(column_n) == 0) {
+            if (table->columns.count(column_n) == 0) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
             auto column_d = item.value();
-            table_column& column = (*table->columns)[column_n];
+            table_column& column = table->columns[column_n];
 
             // Validate type.
             if (column_d.is_object()) {
@@ -978,7 +979,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             }
         }
 
-        int result = erase_all_records(name.c_str(), d, dynamic_count, limit);
+        int result = table->erase_all_records(d, dynamic_count, limit);
         nlohmann::json data = { {"count", result} };
 
         send_query_response(socket_data, nonce, data);
@@ -1016,13 +1017,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             auto column_n = item.key();
 
             // Check if column exists.
-            if (table->columns->count(column_n) == 0) {
+            if (table->columns.count(column_n) == 0) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
             auto column_d = item.value();
-            table_column& column = (*table->columns)[column_n];
+            table_column& column = table->columns[column_n];
 
             // Validate type.
             if (column_d.is_object()) {
@@ -1067,13 +1068,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             auto column_n = item.key();
 
             // Check if column exists.
-            if (table->columns->count(column_n) == 0) {
+            if (table->columns.count(column_n) == 0) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
             auto column_d = item.value();
-            table_column& column = (*table->columns)[column_n];
+            table_column& column = table->columns[column_n];
 
             // Validate type.
             if (
@@ -1088,7 +1089,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             }
         }
 
-        int result = update_all_records(name.c_str(), d, dynamic_count, limit);
+        int result = table->update_all_records(d, dynamic_count, limit);
         nlohmann::json data = { {"count", result} };
 
         send_query_response(socket_data, nonce, data);
@@ -1101,7 +1102,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         log("Rebuild of table %s has been started", table->header.name);
 
         auto start_time = std::chrono::high_resolution_clock::now();
-        table_rebuild_statistics stats = rebuild_table(table->header.name);
+        table_rebuild_statistics stats = rebuild_table(&table);
         auto end_time = std::chrono::high_resolution_clock::now();
 
         log("Rebuild of table %s has been completed (took %ums)", table->header.name, (unsigned int)((end_time - start_time) / std::chrono::milliseconds(1)));

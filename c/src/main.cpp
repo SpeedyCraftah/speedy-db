@@ -18,15 +18,15 @@
 #include "logging/logger.h"
 #include "connections/handler.h"
 #include "permissions/accounts.h"
-#include "storage/driver.h"
 #include <cstdlib>
 #include "misc/files.h"
+#include "storage/table.h"
 
 // Global variable holding the socket ID.
 int server_socket_id;
 int connections_size = 0;
 std::unordered_map<int, client_socket_data*>* socket_connections;
-std::unordered_map<std::string, active_table*>* open_tables;
+std::unordered_map<std::string, ActiveTable*>* open_tables;
 std::unordered_map<std::string, DatabaseAccount*>* database_accounts;
 FILE* database_accounts_handle = nullptr;
 
@@ -145,7 +145,7 @@ int main(int argc, char** args) {
 
     // Create structures.
     socket_connections = new std::unordered_map<int, client_socket_data*>();
-    open_tables = new std::unordered_map<std::string, active_table*>();
+    open_tables = new std::unordered_map<std::string, ActiveTable*>();
     database_accounts = new std::unordered_map<std::string, DatabaseAccount*>();
 
     if (server_config::root_account_enabled) {
@@ -167,7 +167,7 @@ int main(int argc, char** args) {
     }
 
     // Open the internal permissions table.
-    open_table("--internal-table-permissions");
+    new ActiveTable("--internal-table-permissions", true);
 
     // Load the database accounts into memory.
     // Open the file containing the database accounts.

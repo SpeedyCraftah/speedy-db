@@ -1,13 +1,21 @@
 #include "table.h"
-#include "driver.h"
 #include <cstddef>
+#include <openssl/types.h>
 #include <unordered_map>
 #include "../deps/xxh/xxhash.h"
+#include "../logging/logger.h"
+#include <sys/types.h>
+#include <sys/stat.h>
 
 // TODO - add mutex
 // TODO - preallocate record header for each handle instead of mallocing and freeing on every query
 
+// Open table needs a separate mutex due to deadlocks.
+std::mutex open_table_mutex;
+
 ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_internal(is_internal) {
+    open_table_mutex.lock();
+
     // Create the data paths.
     std::string path = std::string("./data/").append(table_name);
     std::string meta_path = path + "/meta.bin";
@@ -33,9 +41,15 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
 
     this->record_size += sizeof(record_header);
 
+    // Allocate memory for columns.
+    this->header_columns = (table_column*)calloc(sizeof(table_column) * header.num_columns, 1);
+
+    // Read the columns and write them to the struct.
+    fread_unlocked(this->header_columns, 1, sizeof(table_column) * header.num_columns, header_handle);
+
     // Load the columns to the map.
     for (int i = 0; i < this->header.num_columns; i++) {
-        table_column& column = this->header.columns[i];
+        table_column& column = this->header_columns[i];
 
         // Keep index order intact.
         column.index = i;
@@ -44,26 +58,49 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
         this->record_data_size += column.size == 0 ? sizeof(hashed_entry) : column.size;
         this->hashed_column_count += column.size == 0 ? 1 : 0;
 
-        this->columns[this->header.columns[i].name] = this->header.columns[i];
+        this->columns[this->header_columns[i].name] = this->header_columns[i];
     }
 
     this->record_size += this->record_data_size;
 
     // Load the account permissions if table is not internal as internal tables do not have custom permissions.
-    if (this->is_internal) {
+    if (!this->is_internal) {
         // Create permission map instance.
         this->permissions = new std::unordered_map<size_t, TablePermissions>();
 
-        // todo
+        // Get permissions table.
+        ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+
+        // Load the account permissions.
+        nlohmann::json query = {
+            { "where", {
+                { "table", this->header.name }
+            } }
+        };
+        nlohmann::json accounts = permissions_table->find_all_records(query, 1, 0, 1, false);
+
+        // Add the accounts to the map.
+        for (const auto& account : accounts) {
+            uint8_t permissions = account["permissions"];
+            (*this->permissions)[account["index"]] = *(TablePermissions*)&permissions;
+        }
     }
 
     // Add table to the map.
     // TODO - see if this is a bad idea
+    // If the table already exists.
+    if (open_tables->count(table_name) != 0) {
+        logerr("Table new constructor called when table is already open");
+        exit(1);
+    }
+
     (*open_tables)[table_name] = this;
 
     // Close handles which are not needed.
     fclose(header_handle);
     fclose(permissions_handle);
+
+    open_table_mutex.unlock();
 }
 
 ActiveTable::~ActiveTable() {
@@ -74,9 +111,14 @@ ActiveTable::~ActiveTable() {
     // Free permissions if needed.
     if (this->permissions != nullptr) delete this->permissions;
 
+    // Free columns.
+    free(this->header_columns);
+
     // TODO - see if this is a bad idea
     // Remove table from map.
+    open_table_mutex.lock();
     open_tables->erase(this->header.name);
+    open_table_mutex.unlock();
 }
 
 void ActiveTable::compute_dynamic_hashes(size_t* output, nlohmann::json& data) {
@@ -97,7 +139,7 @@ int ActiveTable::calculate_offset(int index) {
 
     int total = 0;
     for (int i = 0; i < index; i++) {
-        table_column& column = this->header.columns[i];
+        table_column& column = this->header_columns[i];
         total += column.type == types::string ? sizeof(hashed_entry) : column.size;
     }
 
@@ -260,12 +302,12 @@ void ActiveTable::output_dynamic_value(nlohmann::json& output, table_column& col
     free(buffer);
 }
 
-void ActiveTable::assemble_record_data(record_header* header, nlohmann::json& output, nlohmann::json& query, bool limited_results) {
+void ActiveTable::assemble_record_data(record_header* r_header, nlohmann::json& output, nlohmann::json& query, bool limited_results) {
     if (limited_results) {
         // Only populate the requested fields.
         for (auto& column_n : query["return"]) {
             table_column& column = this->columns[column_n];
-            uint8_t* data_area = header->data + calculate_offset(column.index);
+            uint8_t* data_area = r_header->data + calculate_offset(column.index);
 
             // If the column is dynamic.
             if (column.type == types::string) output_dynamic_value(output, column, data_area);
@@ -275,8 +317,8 @@ void ActiveTable::assemble_record_data(record_header* header, nlohmann::json& ou
         }
     } else {
         for (int i = 0; i < this->header.num_columns; i++) {
-            table_column& column = this->header.columns[i];
-            uint8_t* data_area = header->data + calculate_offset(column.index);
+            table_column& column = this->header_columns[i];
+            uint8_t* data_area = r_header->data + calculate_offset(column.index);
 
             // If the column is dynamic.
             if (column.type == types::string) output_dynamic_value(output, column, data_area);
@@ -287,19 +329,146 @@ void ActiveTable::assemble_record_data(record_header* header, nlohmann::json& ou
     }
 }
 
-table_rebuild_statistics ActiveTable::rebuild_table() {
+long ActiveTable::find_record_location(nlohmann::json& data, int dynamic_count, int seek_direction) {
     record_header* header = (record_header*)malloc(this->record_size);
+
+    long end_seek;
+
+    // Prepare the seek position.
+    if (seek_direction == 1) fseek(this->data_handle, 0, SEEK_SET);
+    else {
+        // If seeking is backwards, set the end seek location.
+        fseek(this->data_handle, 0, SEEK_END);
+        end_seek = ftell(this->data_handle) - this->record_size;
+        fseek(this->data_handle, end_seek, SEEK_SET);
+    }
+
+    // Create a hash of all dynamic columns.
+    size_t dynamic_column_hashes[this->header.num_columns];
+    if (dynamic_count != 0) compute_dynamic_hashes(dynamic_column_hashes, data);
+
+    while (true) {
+        // If the end has been reached for backwards seeking, return no results.
+        if (seek_direction == -1 && end_seek < 0) {
+            free(header);
+            return -1;
+        }
+
+        // Read the header of the record.
+        int fields_read = fread_unlocked(header, 1, this->record_size, this->data_handle);
+
+        // End of file has been reached as read has failed.
+        if (fields_read != this->record_size) {
+            // Free header and return no results.
+            free(header);
+            return -1;
+        }
+
+        if (seek_direction == -1) {
+            // Seek to next record.
+            end_seek -= this->record_size;
+            fseek(this->data_handle, end_seek, SEEK_SET);
+        }
+
+        // If the block is empty, skip to the next one.
+        if ((header->flags & record_flags::active) == 0) continue;
+
+        // Check if record passes the conditions.
+        if (!validate_record_conditions(header, dynamic_column_hashes, data)) continue;
+
+        // Record has passed the condition.
+        break;
+    }
+
+    // Free the header as it is not needed anymore.
+    free(header);
+
+    // Return the location.
+    if (seek_direction == 1) return ftell(this->data_handle) - this->record_size;
+    else return end_seek + this->record_size;
+}
+
+
+std::mutex misc_op_mutex;
+
+bool table_exists(const char* name) {
+    struct stat info;
+
+    misc_op_mutex.lock();
+    std::string path =  "./data/";
+    path += name;
+    int state = stat(path.c_str(), &info);
+    misc_op_mutex.unlock();
+
+    return state == 0;
+}
+
+void create_table(const char* table_name, table_column* columns, int length) {
+    misc_op_mutex.lock();
+
+    // Create the data path.
+    std::string path = std::string("./data/").append(table_name);
+    mkdir(path.c_str(), 0777);
+
+    // Append a slash for future paths.
+    path.append("/");
+    
+    // Create paths.
+    std::string meta_path = std::string(path).append("meta.bin");
+    std::string data_path = std::string(path).append("data.bin");
+    std::string dynamic_path = std::string(path).append("dynamic.bin");
+    std::string permissions_path = std::string(path).append("permissions.bin");
+
+    // Create a file containing the table metadata.
+    fclose(fopen(meta_path.c_str(), "a"));
+
+    // Create a file containing the table data.
+    fclose(fopen(data_path.c_str(), "a"));
+
+    // Create a file containing the table dynamic data.
+    fclose(fopen(dynamic_path.c_str(), "a"));
+
+    // Create a file containing the table account permissions.
+    fclose(fopen(permissions_path.c_str(), "a"));
+
+    // Open the file in r+w mode.
+    FILE* handle = fopen(meta_path.c_str(), "r+b");
+    
+    // Create header.
+    table_header header;
+    header.magic_number = TABLE_MAGIC_NUMBER;
+    header.num_columns = length;
+
+    // Copy name.
+    strcpy(header.name, table_name);
+
+    // Write header to file.
+    fwrite_unlocked(&header, 1, sizeof(table_header), handle);
+
+    // Write all of the columns.
+    fwrite_unlocked(columns, 1, sizeof(table_column) * length, handle);
+
+    // Close the file handle.
+    fclose(handle);
+
+    misc_op_mutex.unlock();
+}
+
+table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
+    ActiveTable* table = *table_var;
+    bool is_internal = table->is_internal;
+    record_header* header = (record_header*)malloc(table->record_size);
 
     table_rebuild_statistics stats;
 
-    this->op_mutex.lock();
+    open_table_mutex.lock();
 
     // Seek to start.
-    fseek(this->data_handle, 0, SEEK_SET);
+    fseek(table->data_handle, 0, SEEK_SET);
 
     // Create temporary paths.
     // Create the data path.
-    std::string path = std::string("./data/").append(this->header.name).append("/");
+    std::string path = std::string("./data/").append(table->header.name).append("/");
     
     // Create paths.
     std::string old_data_path = std::string(path).append("data.bin");
@@ -322,13 +491,13 @@ table_rebuild_statistics ActiveTable::rebuild_table() {
     fseek(new_data_handle, 0, SEEK_END);
 
     while (true) {
-        size_t header_location = ftell(this->data_handle);
+        size_t header_location = ftell(table->data_handle);
 
         // Read the header of the record.
-        int fields_read = fread_unlocked(header, 1, this->record_size, this->data_handle);
+        int fields_read = fread_unlocked(header, 1, table->record_size, table->data_handle);
 
         // End of file has been reached as read has failed.
-        if (fields_read != this->record_size) break;
+        if (fields_read != table->record_size) break;
 
         // If the block is empty, skip to the next one.
         if ((header->flags & record_flags::active) == 0) {
@@ -339,11 +508,11 @@ table_rebuild_statistics ActiveTable::rebuild_table() {
         stats.record_count++;
         
         // Check if any dynamic columns need rebuilding.
-        for (uint32_t i = 0; i < this->header.num_columns; i++) {
-            table_column& column = this->header.columns[i];
+        for (uint32_t i = 0; i < table->header.num_columns; i++) {
+            table_column& column = table->header_columns[i];
 
             // Get the location of the column in the buffer.
-            uint8_t* base = header->data + calculate_offset(column.index);
+            uint8_t* base = header->data + table->calculate_offset(column.index);
 
             // If the column is dynamic.
             if (column.type == types::string) {
@@ -354,10 +523,10 @@ table_rebuild_statistics ActiveTable::rebuild_table() {
                 dynamic_record* dynamic_data = (dynamic_record*)malloc(sizeof(dynamic_record) + entry->size + 1);
                 
                 // Seek to the dynamic data.
-                fseek(this->dynamic_handle, entry->record_location, SEEK_SET);
+                fseek(table->dynamic_handle, entry->record_location, SEEK_SET);
 
                 // Read the dynamic data to the allocated space.
-                fread_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size + 1, this->dynamic_handle);
+                fread_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size + 1, table->dynamic_handle);
 
                 // Update short string statistic if short.
                 if (entry->size + 1 != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
@@ -376,7 +545,7 @@ table_rebuild_statistics ActiveTable::rebuild_table() {
         }
 
         // Write the record to the new data file.
-        fwrite(header, 1, this->record_size, new_data_handle);
+        fwrite(header, 1, table->record_size, new_data_handle);
 
         fseek(new_dynamic_handle, 0, SEEK_END);
         fseek(new_data_handle, 0, SEEK_END);
@@ -387,16 +556,16 @@ table_rebuild_statistics ActiveTable::rebuild_table() {
     fclose(new_dynamic_handle);
 
     // Temporarily copy table name.
-    std::string safe_table_name = std::string(this->header.name);
+    std::string safe_table_name = std::string(table->header.name);
 
     // Unlock mutex for table close.
-    this->op_mutex.unlock();
+    open_table_mutex.unlock();
 
     // Close the table.
-    close_table(safe_table_name.c_str());
+    delete table;
 
     // Acquire mutex again.
-    this->op_mutex.lock();
+    open_table_mutex.lock();
 
     // Delete old data files.
     remove(old_data_path.c_str());
@@ -407,10 +576,10 @@ table_rebuild_statistics ActiveTable::rebuild_table() {
     rename(new_dynamic_path.c_str(), old_dynamic_path.c_str());
 
     // Unlock mutex again.
-    this->op_mutex.unlock();
+    open_table_mutex.unlock();
 
-    // Reopen the table.
-    open_table(safe_table_name.c_str());
+    // Reopen the table and replace variable with new pointer.
+    *table_var = new ActiveTable(safe_table_name.c_str(), is_internal);
 
     free(header);
 

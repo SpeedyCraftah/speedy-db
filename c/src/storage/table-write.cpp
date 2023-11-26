@@ -205,7 +205,7 @@ void ActiveTable::insert_record(nlohmann::json& data) {
 
     for (int i = 0; i < this->header.num_columns; i++) {
         // Fetch the column and find the data area for it.
-        table_column& column = this->header.columns[i];
+        table_column& column = this->header_columns[i];
         uint8_t* data_area = header->data + calculate_offset(column.index);
 
         // If the column is dynamic.

@@ -4,7 +4,6 @@
 #include "accounts.h"
 #include "../main.h"
 #include "../crypto/crypto.h"
-#include "../storage/driver.h"
 #include "permissions.h"
 
 std::mutex accounts_mutex;
@@ -64,7 +63,7 @@ void delete_database_account(DatabaseAccount* account) {
             { "index", account->internal_index }
         } }
     };
-    erase_all_records("--internal-table-permissions", query, 0, 0);
+    (*open_tables)["--internal-table-permissions"]->erase_all_records(query, 0, 0);
 
     // Free the account from memory.
     free(account);
@@ -81,7 +80,7 @@ void update_database_account(DatabaseAccount* account, DatabaseAccount new_accou
     accounts_mutex.unlock();
 }
 
-void set_table_account_permissions(active_table* table, DatabaseAccount* account, TablePermissions& permissions) {
+void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account, TablePermissions& permissions) {
     // Check if permissions are already set for this table and account.
     if (table->permissions->count(account->internal_index)) {
         // Delete existing set.
@@ -97,7 +96,7 @@ void set_table_account_permissions(active_table* table, DatabaseAccount* account
                 { "permissions", *(uint8_t*)&permissions }
             } }
         };
-        update_all_records("--internal-table-permissions", query, 1, 1);
+        (*open_tables)["--internal-table-permissions"]->update_all_records(query, 1, 1);
     } else {
         // Create the new permission entry.
         nlohmann::json query = {
@@ -105,28 +104,28 @@ void set_table_account_permissions(active_table* table, DatabaseAccount* account
             { "table", table->header.name },
             { "permissions", *(uint8_t*)&permissions }
         };
-        insert_record("--internal-table-permissions", query);
+        (*open_tables)["--internal-table-permissions"]->insert_record(query);
     }
 
     // Set the new permissions.
     (*table->permissions)[account->internal_index] = permissions;
 }
 
-void delete_table_account_permissions(active_table* table, DatabaseAccount* account) {
+void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* account) {
     nlohmann::json query = {
         { "where", {
             { "table", table->header.name },
             { "index", account->internal_index }
         } }
     };
-    erase_all_records("--internal-table-permissions", query, 1, 1);
+    (*open_tables)["--internal-table-permissions"]->erase_all_records(query, 1, 1);
 }
 
 // Placeholder struct for all permissions.
 const TablePermissions placeholder_table_all_permissions = { 1, 1, 1, 1, 1 };
 const TablePermissions placeholder_table_no_permissions = { 0, 0, 0, 0, 0 };
 
-const TablePermissions* get_table_permissions_for_account(active_table* table, DatabaseAccount* account, bool include_table_admin) {
+const TablePermissions* get_table_permissions_for_account(ActiveTable* table, DatabaseAccount* account, bool include_table_admin) {
     // If account is a table administrator, all permissions are granted regardless of table overrides.
     if (include_table_admin && account->permissions.TABLE_ADMINISTRATOR) return &placeholder_table_all_permissions;
 
