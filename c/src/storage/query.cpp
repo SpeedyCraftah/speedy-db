@@ -88,7 +88,11 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         return;
     }
 
-    if (op == query_ops::create_table) {
+    if (op == query_ops::no_operation) {
+        send_query_response(socket_data, nonce);
+    }
+
+    else if (op == query_ops::create_table) {
         if (!account->permissions.CREATE_TABLES) return query_error(errors::insufficient_privileges);
 
         if (
