@@ -20,6 +20,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include "../deps/rapidjson/writer.h"
+#include "../deps/rapidjson/stringbuffer.h"
 
 #define MAX_PACKET_SIZE 104857600
 
@@ -110,9 +112,12 @@ void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_le
     free(buffer);
 }
 
-inline void send_json(client_socket_data* socket_data, const nlohmann::json &data) {
-    const std::string raw_d = data.dump(-1, ' ', true);
-    send_res(socket_data, raw_d.c_str(), raw_d.length());
+// TODO - speed this up.
+inline void send_json(client_socket_data* socket_data, rapidjson::Document& data) {
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    data.Accept(writer);
+    send_res(socket_data, sb.GetString(), sb.GetSize());
 }
 
 // Handle the message.
