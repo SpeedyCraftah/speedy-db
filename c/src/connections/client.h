@@ -46,6 +46,7 @@ struct client_socket_data {
     DatabaseAccount* account;
 
     simdjson::ondemand::parser parser;
+    rapidjson::Document object;
 };
 
 namespace errors {
