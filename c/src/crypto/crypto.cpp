@@ -104,7 +104,6 @@ size_t crypto::aes256::decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, cons
     int outlen1;
     int outlen2;
 
-    // SEGF here
     EVP_DecryptInit(ctx, EVP_aes_256_cbc(), (unsigned char*)key, (unsigned char*)iv);
     
     EVP_DecryptUpdate(ctx, (unsigned char*)output, &outlen1, (unsigned char*)input, input_size);
