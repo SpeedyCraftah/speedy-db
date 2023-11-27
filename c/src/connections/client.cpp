@@ -120,6 +120,13 @@ inline void send_json(client_socket_data* socket_data, rapidjson::Document& data
     send_res(socket_data, sb.GetString(), sb.GetSize());
 }
 
+// Make list of potential names.
+rapidjson::Value error_long("error", 5);
+rapidjson::Value error_short("e", 1);
+
+rapidjson::Value nonce_long("nonce", 5);
+rapidjson::Value nonce_short("n", 1);
+
 // Handle the message.
 // true = disconnect the socket.
 // false = continue.
@@ -131,7 +138,12 @@ bool process_message(const char* buffer, client_socket_data* socket_data) {
     try {
         auto data = nlohmann::json::parse(buffer);
 
-        if (!data.contains(short_attr ? "n" : "nonce") || !data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
+        if (!data.contains(short_attr ? nonce_short : nonce_long) || !data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
+            rapidjson::Document object;
+            object.SetObject();
+
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+
             send_json(socket_data, { 
                 { short_attr ? "e" : "error", true },
                 { short_attr ? "d" : "data", {
