@@ -32,6 +32,7 @@ A database written in C++ and C which has been started due to me needing a proje
 
 # Libraries used
 - [simdjson](https://github.com/simdjson/simdjson) for accelerated JSON parsing.
+- [RapidJSON](https://github.com/Tencent/rapidjson) for building of JSON data.
 - [xxHash](https://github.com/Cyan4973/xxHash) for fast hashing of data.
 - [OpenSSL](https://github.com/openssl/openssl) for cryptography.
 - Everything else was written by me.

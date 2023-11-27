@@ -63,7 +63,7 @@
         "typeinfo": "cpp",
         "valarray": "cpp"
     },
-    "C_Cpp.autocomplete": "Disabled",
+    "C_Cpp.autocomplete": "disabled",
     "C_Cpp.codeAnalysis.runAutomatically": false,
-    "C_Cpp.intelliSenseEngine": "Disabled"
+    "C_Cpp.intelliSenseEngine": "disabled"
 }
