@@ -22,11 +22,12 @@
 #include <netinet/tcp.h>
 #include "../deps/rapidjson/writer.h"
 #include "../deps/rapidjson/stringbuffer.h"
+#include "../deps/simdjson/simdjson.h"
 
 #define MAX_PACKET_SIZE 104857600
 
 // Define the error text list.
-const char* errors::text[] = {
+const rapidjson::GenericStringRef<char> errors::text[] = {
     "The provided JSON could not be parsed by the engine.",
     "The total size of the sent data exceeds the maximum packet size. This limit can be increased in the server settings.",
     "The buffer overflow protection has been triggered. This could be due to your query not containing a valid or correctly calculated header/terminator.",
@@ -121,39 +122,48 @@ inline void send_json(client_socket_data* socket_data, rapidjson::Document& data
 }
 
 // Make list of potential names.
-rapidjson::Value error_long("error", 5);
-rapidjson::Value error_short("e", 1);
+rapidjson::GenericStringRef<char> error_long = "error";
+rapidjson::GenericStringRef<char> error_short = "e";
 
-rapidjson::Value nonce_long("nonce", 5);
-rapidjson::Value nonce_short("n", 1);
+rapidjson::GenericStringRef<char> nonce_long = "nonce";
+rapidjson::GenericStringRef<char> nonce_short = "n";
+
+rapidjson::GenericStringRef<char> data_long = "data";
+rapidjson::GenericStringRef<char> data_short = "d";
+
+rapidjson::GenericStringRef<char> code_long = "code";
+rapidjson::GenericStringRef<char> code_short = "c";
+
+rapidjson::GenericStringRef<char> text_long = "text";
+rapidjson::GenericStringRef<char> text_short = "t";
 
 // Handle the message.
 // true = disconnect the socket.
 // false = continue.
-bool process_message(const char* buffer, client_socket_data* socket_data) {
+bool process_message(const char* buffer, uint32_t data_size, client_socket_data* socket_data) {
     int socket_id = socket_data->socket_id;
     bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
 
     try {
-        auto data = nlohmann::json::parse(buffer);
+        auto data = socket_data->parser.iterate(buffer, data_size, data_size + simdjson::SIMDJSON_PADDING);
 
-        if (!data.contains(short_attr ? nonce_short : nonce_long) || !data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
+        // todo - move to process_query, cant iterate more than once
+        /*if (!data.contains(short_attr ? nonce_short : nonce_long) || !data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::nonce_invalid, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::nonce_invalid], data_object.GetAllocator());
+
             rapidjson::Document object;
             object.SetObject();
-
             object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-            send_json(socket_data, { 
-                { short_attr ? "e" : "error", true },
-                { short_attr ? "d" : "data", {
-                    { short_attr ? "c" : "code", errors::nonce_invalid },
-                    { short_attr ? "t" : "text", error_text ? errors::text[errors::nonce_invalid] : "" }
-                }} 
-            });
+            send_json(socket_data, data_object);
 
             return false;
-        }
+        }*/
 
         process_query(socket_data, data);
     } catch(int i) {//catch(const std::exception& e) {
@@ -164,10 +174,24 @@ bool process_message(const char* buffer, client_socket_data* socket_data) {
                 { short_attr ? "t" : "text", error_text ? errors::text[errors::json_invalid] : "" }
             }} 
         });
+
+        rapidjson::Document data_object;
+        data_object.SetObject();
+        data_object.AddMember(short_attr ? code_short : code_long, errors::json_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::json_invalid], data_object.GetAllocator());
+
+        rapidjson::Document object;
+        object.SetObject();
+        object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+        object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+        send_json(socket_data, data_object);
     }
 
     return false;
 }
+
+#define HANDSHAKE_BUFFER_SIZE 1000 + 1 + simdjson::SIMDJSON_PADDING
 
 void* client_connection_handle(void* arg) {
     client_socket_data* socket_data = (client_socket_data*)arg;
@@ -178,7 +202,8 @@ void* client_connection_handle(void* arg) {
     bool error_text = socket_data->config.error_text;
 
     // Allocate space for buffer.
-    char incoming_buffer[1000 + 1];
+    // TODO - reuse buffer, perhaps by malloc.
+    char incoming_buffer[HANDSHAKE_BUFFER_SIZE];
 
     int incoming_bytes;
 
@@ -478,9 +503,10 @@ void* client_connection_handle(void* arg) {
             goto break_socket;
         }
 
-        // Allocate space for the packet.
-        buffer = (uint8_t*)malloc(remaining_size);
+        // Allocate space for the packet (+ simdjson padding).
+        buffer = (uint8_t*)malloc(remaining_size + simdjson::SIMDJSON_PADDING);
         size_t size = remaining_size;
+        uint32_t actual_data_size = remaining_size - 1;
 
         // Check if the buffer has been allocated.
         if (buffer == nullptr) {
@@ -545,12 +571,13 @@ void* client_connection_handle(void* arg) {
                 (char*)buffer, size - 1, output_buffer
             );
 
+            actual_data_size = decrypt_size;
             output_buffer[decrypt_size] = 0;
             free(buffer);
         } else output_buffer = (char*)buffer;
 
         // Data can now be processed. Pass it to the relevant handlers.
-        bool msg_handle = process_message(output_buffer, socket_data);
+        bool msg_handle = process_message(output_buffer, actual_data_size, socket_data);
         if (msg_handle == true) goto break_socket;
 
         // The buffer is no longer needed.

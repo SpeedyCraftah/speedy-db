@@ -79,7 +79,7 @@ namespace errors {
         insufficient_privileges
     };
 
-    extern const char* text[];
+    extern const rapidjson::GenericStringRef<char> text[];
 }
 
 void* client_connection_handle(void* arg);
