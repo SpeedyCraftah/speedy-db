@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string_view>
 #include <sys/types.h>
+#include "../deps/simdjson/simdjson.h"
 
 namespace query_compiler {
     enum WHERE_COMPARE_OP : uint8_t {
@@ -134,4 +135,11 @@ namespace query_compiler {
     struct CompiledInsertQuery {
         GenericInsertColumn* values;
     };
+
+    // Functions.
+
+    CompiledFindQuery* compile_find_query(simdjson::ondemand::document* query_object);
+    CompiledInsertQuery* compile_insert_query(simdjson::ondemand::document* query_object);
+    CompiledEraseQuery* compile_erase_query(simdjson::ondemand::document* query_object);
+    CompiledUpdateQuery* compile_update_query(simdjson::ondemand::document* query_object);
 };
