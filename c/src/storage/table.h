@@ -60,6 +60,12 @@ struct hashed_entry {
     size_t record_location;
 } __attribute__((packed));
 
+struct StringViewCompare {
+  bool operator()(const std::string_view& lhs, const std::string& rhs) const {
+    return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+  }
+};
+
 class ActiveTable {
     public:
         ActiveTable(const char* table_name, bool is_internal);
@@ -96,7 +102,7 @@ class ActiveTable {
 
     public:
         // TODO - make private in the future somehow.
-        std::map<std::string, table_column> columns;
+        std::map<std::string, table_column, std::less<>> columns;
         std::unordered_map<size_t, TablePermissions>* permissions = nullptr;
         table_header header;
         table_column* header_columns;
