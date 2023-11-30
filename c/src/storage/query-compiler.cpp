@@ -8,7 +8,14 @@
 
 namespace query_compiler {
     class exception : public std::exception {
-        
+        public:
+            exception(query_compiler::error errorCode) : errorCode_(errorCode) {};
+            query_compiler::error error() const {
+                return errorCode_;
+            }
+
+        private:
+            query_compiler::error errorCode_;
     };
 
     CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
@@ -25,7 +32,7 @@ namespace query_compiler {
             std::string_view key = condition.unescaped_key();
 
             auto column_find = table->columns.find(key);
-            if (column_find == table->columns.end()) 
+            if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
             
 
         }
