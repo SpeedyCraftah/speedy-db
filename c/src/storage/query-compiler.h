@@ -5,8 +5,15 @@
 #include <string_view>
 #include <sys/types.h>
 #include "../deps/simdjson/simdjson.h"
+#include "table.h"
 
 namespace query_compiler {
+    enum error {
+        COLUMN_NOT_FOUND,
+        TOO_MANY_CMP_OPS,
+        TOO_MANY_UPDATE_OPS
+    };
+
     enum WHERE_COMPARE_OP : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
@@ -102,6 +109,7 @@ namespace query_compiler {
     
 
     // TODO note - compare performance between using bitfield for result limits or an array, or both.
+    // TODO - consider memory deallocation
 
     struct CompiledFindQuery {
         GenericQueryComparison* conditions;
@@ -138,8 +146,8 @@ namespace query_compiler {
 
     // Functions.
 
-    CompiledFindQuery* compile_find_query(simdjson::ondemand::document* query_object);
-    CompiledInsertQuery* compile_insert_query(simdjson::ondemand::document* query_object);
-    CompiledEraseQuery* compile_erase_query(simdjson::ondemand::document* query_object);
-    CompiledUpdateQuery* compile_update_query(simdjson::ondemand::document* query_object);
+    CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::document& query_object);
+    CompiledInsertQuery* compile_insert_query(ActiveTable* table, simdjson::ondemand::document& query_object);
+    CompiledEraseQuery* compile_erase_query(ActiveTable* table, simdjson::ondemand::document& query_object);
+    CompiledUpdateQuery* compile_update_query(ActiveTable* table, simdjson::ondemand::document& query_object);
 };
