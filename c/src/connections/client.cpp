@@ -50,7 +50,8 @@ const char* errors::text[] = {
     "The name you have provided is an internally reserved name and cannot be used.",
     "The number value you have provided is an internally reserved value and cannot be used.",
     "The account username you provided does not belong to any account.",
-    "This account does not have access to the privileges required to perform this operation."
+    "This account does not have access to the privileges required to perform this operation.",
+    "Your query has too many WHERE conditions and cannot be processed due to efficiency reasons."
 };
 
 // A function which sends data to the socket across a TCP stream which supports

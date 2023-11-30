@@ -71,7 +71,8 @@ namespace errors {
         name_reserved,
         value_reserved,
         username_not_found,
-        insufficient_privileges
+        insufficient_privileges,
+        too_many_conditions
     };
 
     extern const char* text[];
