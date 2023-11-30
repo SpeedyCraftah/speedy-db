@@ -25,16 +25,20 @@ namespace query_compiler {
         simdjson::ondemand::object conditions_object = query_object["where"];
 
         // Create buffer which should cover every condition operation.
-        compiled_query->conditions = new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT];
+        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+        compiled_query->conditions = conditions.get();
 
-        // Iterate over the conditional queries.
+        // Iterate over the conditional queries and count queries.
+        uint32_t conditions_count = 0;
         for (auto condition : conditions_object) {
             std::string_view key = condition.unescaped_key();
 
             auto column_find = table->columns.find(key);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
             
-
+            
+            conditions_count++;
+            if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
         }
     }
 };
