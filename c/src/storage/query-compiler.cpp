@@ -4,6 +4,8 @@
 #include <string_view>
 #include <exception> 
 
+using simdjson::fallback::ondemand::json_type;
+
 #define MAX_VARIABLE_OPERATION_COUNT 20
 
 namespace query_compiler {
@@ -36,9 +38,14 @@ namespace query_compiler {
             auto column_find = table->columns.find(key);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
             
-            
+
             conditions_count++;
             if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
         }
+
+        // Prevent smart pointers from deallocating.
+        conditions.release();
+
+        return compiled_query.release();
     }
 };
