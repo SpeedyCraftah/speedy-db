@@ -62,12 +62,49 @@ namespace query_compiler {
                                 
                             std::string_view comparator = advanced_value.raw_json();
 
+                            // Slice out quotes from beginning and end.
+                            comparator.remove_prefix(1);
+                            comparator.remove_suffix(1);
+
                             StringQueryComparison* cmp = reinterpret_cast<StringQueryComparison*>(&conditions[conditions_count]);
                             cmp->op = where_compare_op::STRING_CONTAINS;
                             cmp->column_index = column.index;
                             cmp->comparator = comparator;
                             cmp->comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
+                        } else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
+
+                        conditions_count++;
+                        if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
+                    }
+                } else {
+                    // TODO - shorten LT/LG ops to >/< for efficiency ?
+                    for (auto advanced_condition : cmp_object) {
+                        std::string_view advanced_key = condition.unescaped_key();
+                        auto advanced_value = condition.value();
+
+                        size_t buffer = 0;
+
+                        NumericQueryComparison* cmp = reinterpret_cast<NumericQueryComparison*>(&conditions[conditions_count]);
+                        cmp->column_index = column.index;
+                        
+                        // TODO - find a way to make the very similar key comparisons more efficient.
+                        // - key begins with ?
+                        if (advanced_key == "less_than") cmp->op = where_compare_op::NUMERIC_LESS_THAN;
+                        else if (advanced_key == "greater_than") cmp->op = where_compare_op::NUMERIC_GREATER_THAN;
+                        else if (advanced_key == "less_than_equal_to") cmp->op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
+                        else if (advanced_key == "greater_than_equal_to") cmp->op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
+                        else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
+
+                        switch (column.type) {
+                            case types::integer: *((int*)&buffer) = (int)advanced_value.get_int64(); break;
+                            case types::float32: *((float*)&buffer) = (float)advanced_value.get_double(); break;
+                            default: buffer = advanced_value; break;
                         }
+
+                        cmp->comparator = buffer;
+
+                        conditions_count++;
+                        if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
                     }
                 }
             }
@@ -97,7 +134,7 @@ namespace query_compiler {
 
                     // Standard numbers with no specific requirements.
                     default: {
-                        size_t buffer;
+                        size_t buffer = 0;
 
                         // Correctly cast binary values based on type.
                         switch (value.get_number_type()) {
@@ -106,16 +143,16 @@ namespace query_compiler {
                             default: buffer = value.get_uint64(); break;
                         }
 
-                        UnsignedNumericQueryComparison* cmp = reinterpret_cast<UnsignedNumericQueryComparison*>(&conditions[conditions_count]);
+                        NumericQueryComparison* cmp = reinterpret_cast<NumericQueryComparison*>(&conditions[conditions_count]);
                         cmp->op = where_compare_op::NUMERIC_EQUAL;
                         cmp->column_index = column.index;
                         cmp->comparator = buffer;
                     }
                 }
-            }
 
-            conditions_count++;
-            if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
+                conditions_count++;
+                if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
+            }
         }
 
         // Prevent smart pointers from deallocating.
