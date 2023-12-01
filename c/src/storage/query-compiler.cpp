@@ -87,8 +87,7 @@ namespace query_compiler {
                         NumericQueryComparison* cmp = reinterpret_cast<NumericQueryComparison*>(&conditions[conditions_count]);
                         cmp->column_index = column.index;
                         
-                        // TODO - find a way to make the very similar key comparisons more efficient.
-                        // - key begins with ?
+                        // Compiler checks lengths when comparing strings, no further optimisation needed.
                         if (advanced_key == "less_than") cmp->op = where_compare_op::NUMERIC_LESS_THAN;
                         else if (advanced_key == "greater_than") cmp->op = where_compare_op::NUMERIC_GREATER_THAN;
                         else if (advanced_key == "less_than_equal_to") cmp->op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
@@ -147,12 +146,27 @@ namespace query_compiler {
                         cmp->op = where_compare_op::NUMERIC_EQUAL;
                         cmp->column_index = column.index;
                         cmp->comparator = buffer;
+
+                        break;
                     }
                 }
 
                 conditions_count++;
                 if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
             }
+        }
+
+        // Check for query return limits (ignored on findOne).
+        // TODO - check before checking for limit, performance penalty on invalid elements.
+        if (query_object["limit"].get(compiled_query->limit) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
+        // Check for seek direction.
+        // TODO - change query setting to boolean.
+        // TODO - check before checking for direction, performance penalty on invalid elements.
+        int seek_direction;
+        if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
+            if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
+            compiled_query->seek_direction = seek_direction == 1;
         }
 
         // Prevent smart pointers from deallocating.
