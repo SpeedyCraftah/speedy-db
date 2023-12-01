@@ -11,20 +11,17 @@ namespace query_compiler {
     enum error {
         COLUMN_NOT_FOUND,
         TOO_MANY_CMP_OPS,
-        TOO_MANY_UPDATE_OPS
+        TOO_MANY_UPDATE_OPS,
+        INVALID_CONDITION
     };
 
     enum where_compare_op : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
         NUMERIC_LARGER_THAN,
-        SIGNED_NUMERIC_LARGER_THAN,
         NUMERIC_LARGER_THAN_EQUAL_TO,
-        SIGNED_NUMERIC_LARGER_THAN_EQUAL_TO,
         NUMERIC_LESS_THAN,
-        SIGNED_NUMERIC_LESS_THAN,
         NUMERIC_LESS_THAN_EQUAL_TO,
-        SIGNED_NUMERIC_LESS_THAN_EQUAL_TO,
         STRING_CONTAINS
     };
 
