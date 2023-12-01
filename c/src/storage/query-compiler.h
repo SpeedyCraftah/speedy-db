@@ -14,7 +14,7 @@ namespace query_compiler {
         TOO_MANY_UPDATE_OPS
     };
 
-    enum WHERE_COMPARE_OP : uint8_t {
+    enum where_compare_op : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
         NUMERIC_LARGER_THAN,
@@ -28,20 +28,20 @@ namespace query_compiler {
         STRING_CONTAINS
     };
 
-    enum UPDATE_CHANGES_OP : uint8_t {
+    enum update_changes_op : uint8_t {
         STRING_SET,
         NUMERIC_SET
     };
 
     struct GenericQueryComparison {
-        WHERE_COMPARE_OP op;
+        where_compare_op op;
         uint32_t column_index;
 
         char _padding[24];
     };
 
     struct StringQueryComparison {
-        WHERE_COMPARE_OP op;
+        where_compare_op op;
         uint32_t column_index;
 
         std::string_view comparator;
@@ -49,7 +49,7 @@ namespace query_compiler {
     };
 
     struct UnsignedNumericQueryComparison {
-        WHERE_COMPARE_OP op;
+        where_compare_op op;
         uint32_t column_index;
 
         size_t comparator;
@@ -59,7 +59,7 @@ namespace query_compiler {
 
     // Only to be used for LG/LT comparisons.
     struct SignedNumericQueryComparison {
-        WHERE_COMPARE_OP op;
+        where_compare_op op;
         uint32_t column_index;
 
         intmax_t comparator;
@@ -69,14 +69,14 @@ namespace query_compiler {
 
 
     struct GenericUpdate {
-        UPDATE_CHANGES_OP op;
+        update_changes_op op;
         uint32_t column_index;
 
         char _padding[24];
     };
 
     struct NumericUpdateSet {
-        UPDATE_CHANGES_OP op;
+        update_changes_op op;
         uint32_t column_index;
 
         size_t new_value;
@@ -85,7 +85,7 @@ namespace query_compiler {
     };
 
     struct StringUpdateSet {
-        UPDATE_CHANGES_OP op;
+        update_changes_op op;
         uint32_t column_index;
 
         std::string_view new_value;
