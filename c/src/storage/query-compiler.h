@@ -12,7 +12,8 @@ namespace query_compiler {
         COLUMN_NOT_FOUND,
         TOO_MANY_CMP_OPS,
         TOO_MANY_UPDATE_OPS,
-        INVALID_CONDITION
+        INVALID_CONDITION,
+        INVALID_OPTION_SETTING
     };
 
     enum where_compare_op : uint8_t {
