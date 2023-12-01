@@ -18,8 +18,8 @@ namespace query_compiler {
     enum where_compare_op : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
-        NUMERIC_LARGER_THAN,
-        NUMERIC_LARGER_THAN_EQUAL_TO,
+        NUMERIC_GREATER_THAN,
+        NUMERIC_GREATER_THAN_EQUAL_TO,
         NUMERIC_LESS_THAN,
         NUMERIC_LESS_THAN_EQUAL_TO,
         STRING_CONTAINS
