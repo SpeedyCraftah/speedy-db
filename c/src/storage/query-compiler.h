@@ -46,7 +46,7 @@ namespace query_compiler {
     };
 
     // Used for signed/float comparisons as well, excluding LG/LT.
-    struct UnsignedNumericQueryComparison {
+    struct NumericQueryComparison {
         where_compare_op op;
         uint32_t column_index;
 
