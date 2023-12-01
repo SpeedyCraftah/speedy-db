@@ -55,16 +55,6 @@ namespace query_compiler {
         char _padding[16];
     };
 
-    // Only to be used for LG/LT comparisons.
-    struct SignedNumericQueryComparison {
-        where_compare_op op;
-        uint32_t column_index;
-
-        intmax_t comparator;
-
-        char _padding[16];
-    };
-
 
     struct GenericUpdate {
         update_changes_op op;
