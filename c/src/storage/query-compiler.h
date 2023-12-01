@@ -48,6 +48,7 @@ namespace query_compiler {
         size_t comparator_hash;
     };
 
+    // Used for signed/float comparisons as well, excluding LG/LT.
     struct UnsignedNumericQueryComparison {
         where_compare_op op;
         uint32_t column_index;
