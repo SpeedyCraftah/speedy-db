@@ -46,8 +46,30 @@ namespace query_compiler {
             auto type = value.type().value();
             
             // Advanced comparison.
+            // TODO - add equal comparison for advanced.
             if (type == json_type::object) {
                 simdjson::ondemand::object cmp_object = value.get_object();
+
+                // String key compare operations are expensive, only check for possible combinations.
+                if (column.type == types::string) {
+                    for (auto advanced_condition : cmp_object) {
+                        std::string_view advanced_key = condition.unescaped_key();
+                        auto advanced_value = condition.value();
+
+                        if (advanced_key == "contains") {
+                            // We don't get type checking with raw_json, so manually do it.
+                            if (advanced_value.type().value() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+                                
+                            std::string_view comparator = advanced_value.raw_json();
+
+                            StringQueryComparison* cmp = reinterpret_cast<StringQueryComparison*>(&conditions[conditions_count]);
+                            cmp->op = where_compare_op::STRING_CONTAINS;
+                            cmp->column_index = column.index;
+                            cmp->comparator = comparator;
+                            cmp->comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
+                        }
+                    }
+                }
             }
             
             // Direct comparison.
@@ -55,14 +77,15 @@ namespace query_compiler {
                 switch (column.type) {
                     case types::string: {
                         StringQueryComparison* cmp = reinterpret_cast<StringQueryComparison*>(&conditions[conditions_count]);
+
+                        // We don't get type checking with raw_json, so manually do it.
+                        if (type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
                         std::string_view comparator = value.raw_json();
 
                         // Slice out quotes from beginning and end.
                         comparator.remove_prefix(1);
                         comparator.remove_suffix(1);
-
-                        // We don't get type checking with raw_json, so manually do it.
-                        if (type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
                         cmp->op = where_compare_op::STRING_EQUAL;
                         cmp->column_index = column.index;
