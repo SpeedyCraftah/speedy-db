@@ -60,16 +60,15 @@ void send_query_error(client_socket_data* socket_data, int nonce, int error) {
 // TODO - convert all to this
 #define query_error(error) send_query_error(socket_data, nonce, error)
 
-void process_query(client_socket_data* socket_data, const nlohmann::json& data) {
+void process_query(client_socket_data* socket_data, uint nonce, const nlohmann::json& data) {
     int socket_id = socket_data->socket_id;
     bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
     DatabaseAccount* account = socket_data->account;
-    uint nonce = 0;
 
-    if (data.contains(short_attr ? "n" : "nonce") && data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
+    /*if (data.contains(short_attr ? "n" : "nonce") && data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
         nonce = data[short_attr ? "n" : "nonce"];
-    }
+    }*/
 
     if (!data.contains(short_attr ? "o" : "op") || !data[short_attr ? "o" : "op"].is_number_unsigned()) {
         send_query_error(socket_data, nonce, errors::op_invalid);

@@ -6,6 +6,8 @@
 #include <openssl/crypto.h>
 #include <openssl/dh.h>
 #include "../permissions/accounts.h"
+#include "../deps/simdjson/simdjson.h"
+#include "../deps/rapidjson/document.h"
 
 struct client_socket_data {
     struct version_t {
@@ -42,6 +44,9 @@ struct client_socket_data {
     version_t version;  
     uint64_t last_packet_time = 0;
     DatabaseAccount* account;
+
+    simdjson::ondemand::parser parser;
+    rapidjson::Document object;
 };
 
 namespace errors {
@@ -75,10 +80,10 @@ namespace errors {
         too_many_conditions
     };
 
-    extern const char* text[];
+    extern const rapidjson::GenericStringRef<char> text[];
 }
 
 void* client_connection_handle(void* arg);
 int send_ka(client_socket_data* socket_data);
 void send_res(client_socket_data* socket_data, const char* data, uint32_t length);
-void send_json(client_socket_data* socket_data, const nlohmann::json& data);
+void send_json(client_socket_data* socket_data, const rapidjson::Document& data);

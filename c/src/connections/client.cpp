@@ -1,5 +1,6 @@
 #include "client.h"
 #include "../main.h"
+#include <cstdint>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <stdlib.h>
@@ -7,7 +8,6 @@
 #include "../logging/logger.h"
 #include <unistd.h>
 #include "handler.h"
-#include "../deps/json.hpp"
 #include "../storage/query.h"
 #include <chrono>
 #include <thread>
@@ -20,11 +20,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include "../deps/rapidjson/writer.h"
+#include "../deps/rapidjson/stringbuffer.h"
+#include "../deps/simdjson/simdjson.h"
 
 #define MAX_PACKET_SIZE 104857600
 
 // Define the error text list.
-const char* errors::text[] = {
+const rapidjson::GenericStringRef<char> errors::text[] = {
     "The provided JSON could not be parsed by the engine.",
     "The total size of the sent data exceeds the maximum packet size. This limit can be increased in the server settings.",
     "The buffer overflow protection has been triggered. This could be due to your query not containing a valid or correctly calculated header/terminator.",
@@ -111,47 +114,80 @@ void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_le
     free(buffer);
 }
 
-inline void send_json(client_socket_data* socket_data, const nlohmann::json &data) {
-    const std::string raw_d = data.dump(-1, ' ', true);
-    send_res(socket_data, raw_d.c_str(), raw_d.length());
+// TODO - speed this up.
+inline void send_json(client_socket_data* socket_data, rapidjson::Document& data) {
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    data.Accept(writer);
+    send_res(socket_data, sb.GetString(), sb.GetSize());
 }
+
+// Make list of potential names.
+rapidjson::GenericStringRef<char> error_long = "error";
+rapidjson::GenericStringRef<char> error_short = "e";
+
+rapidjson::GenericStringRef<char> nonce_long = "nonce";
+rapidjson::GenericStringRef<char> nonce_short = "n";
+
+rapidjson::GenericStringRef<char> data_long = "data";
+rapidjson::GenericStringRef<char> data_short = "d";
+
+rapidjson::GenericStringRef<char> code_long = "code";
+rapidjson::GenericStringRef<char> code_short = "c";
+
+rapidjson::GenericStringRef<char> text_long = "text";
+rapidjson::GenericStringRef<char> text_short = "t";
 
 // Handle the message.
 // true = disconnect the socket.
 // false = continue.
-bool process_message(const char* buffer, client_socket_data* socket_data) {
+bool process_message(const char* buffer, uint32_t data_size, client_socket_data* socket_data) {
     int socket_id = socket_data->socket_id;
     bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
 
-    try {
-        auto data = nlohmann::json::parse(buffer);
+    simdjson::ondemand::document data = socket_data->parser.iterate(buffer, data_size, data_size + simdjson::SIMDJSON_PADDING);
 
-        if (!data.contains(short_attr ? "n" : "nonce") || !data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
-            send_json(socket_data, { 
-                { short_attr ? "e" : "error", true },
-                { short_attr ? "d" : "data", {
-                    { short_attr ? "c" : "code", errors::nonce_invalid },
-                    { short_attr ? "t" : "text", error_text ? errors::text[errors::nonce_invalid] : "" }
-                }} 
-            });
+    // Attempt to extract query nonce.
+    uint query_nonce;
+    if (data[short_attr ? "n" : "nonce"].get(query_nonce) != 0) {
+        rapidjson::Document data_object;
+        data_object.SetObject();
+        data_object.AddMember(short_attr ? code_short : code_long, errors::nonce_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::nonce_invalid], data_object.GetAllocator());
 
-            return false;
-        }
+        rapidjson::Document object;
+        object.SetObject();
+        object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+        object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-        process_query(socket_data, data);
-    } catch(int i) {//catch(const std::exception& e) {
-        send_json(socket_data, { 
-            { short_attr ? "e" : "error", true },
-            { short_attr ? "d" : "data", {
-                { short_attr ? "c" : "code", errors::json_invalid },
-                { short_attr ? "t" : "text", error_text ? errors::text[errors::json_invalid] : "" }
-            }} 
-        });
+        send_json(socket_data, object);
+
+        return false;
     }
 
+    // Catch multiple types of errors automatically without redundant checks the library does regardless.
+    // Slight performance penalty on exceptions which are ok.
+    try {
+        process_query(socket_data, query_nonce, data);
+    } catch (const simdjson::simdjson_error& e) {
+        switch (e.error()) {
+            case simdjson::error_code::INCORRECT_TYPE:
+                send_query_error(socket_data, query_nonce, errors::params_invalid);
+                break;
+            case simdjson::error_code::MEMALLOC:
+                send_query_error(socket_data, query_nonce, errors::insufficient_memory);
+                break;
+            default:
+                send_query_error(socket_data, query_nonce, errors::json_invalid);
+                break;
+        }
+    }
+    
     return false;
 }
+
+#define HANDSHAKE_BUFFER_SIZE 1000 + 1 + simdjson::SIMDJSON_PADDING
 
 void* client_connection_handle(void* arg) {
     client_socket_data* socket_data = (client_socket_data*)arg;
@@ -162,7 +198,8 @@ void* client_connection_handle(void* arg) {
     bool error_text = socket_data->config.error_text;
 
     // Allocate space for buffer.
-    char incoming_buffer[1000 + 1];
+    // TODO - reuse buffer, perhaps by malloc.
+    char incoming_buffer[HANDSHAKE_BUFFER_SIZE];
 
     int incoming_bytes;
 
@@ -171,13 +208,18 @@ void* client_connection_handle(void* arg) {
 
     if (incoming_bytes == -1) {
         logerr("Socket with handle %d has been terminated due to an error during handshake", socket_id);
-        send_json(socket_data, {
-            { "error", true },
-            { "data", {
-                { "code", errors::handshake_config_json_invalid },
-                { "text", errors::text[errors::handshake_config_json_invalid] }
-            }}
-        });
+
+        rapidjson::Document data_object;
+        data_object.SetObject();
+        data_object.AddMember(short_attr ? code_short : code_long, errors::handshake_config_json_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::handshake_config_json_invalid], data_object.GetAllocator());
+
+        rapidjson::Document object;
+        object.SetObject();
+        object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+        object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+        send_json(socket_data, object);
 
         goto break_socket;
     }
@@ -192,71 +234,70 @@ void* client_connection_handle(void* arg) {
     incoming_buffer[incoming_bytes] = 0;
 
     try {
-        auto data = nlohmann::json::parse(incoming_buffer);
-
-        // Mandatory parameters.
-        if (!data.contains("version")) throw std::exception();
-        if (!data["version"].contains("major") || !data["version"]["major"].is_number_unsigned()) throw std::exception();
-        if (!data["version"].contains("minor") || !data["version"]["minor"].is_number_unsigned()) throw std::exception();
-
+        auto data = socket_data->parser.iterate(incoming_buffer, incoming_bytes, HANDSHAKE_BUFFER_SIZE);
+        
         // Check the versions.
-        if (data["version"]["major"] > server_config::version::major) {
-            logerr("Socket with handle %d has been terminated due to having an unsupported version.", socket_id);
-            
-            std::string handshake_failure = nlohmann::json({
-                { "error", true },
-                { "data", {
-                    { "code", errors::outdated_server_version },
-                    { "text", errors::text[errors::outdated_server_version] }
-                }}
-            }).dump();
+        simdjson::ondemand::object version_object = data["version"];
+        int64_t version_major = version_object["major"];
+        int64_t version_minor = version_object["minor"];
 
-            send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
-            
-            // Block new connections for 2 seconds.
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        if (version_major > server_config::version::major) {
+            logerr("Socket with handle %d has been terminated due to having an unsupported version.", socket_id);
+
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::outdated_server_version, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::outdated_server_version], data_object.GetAllocator());
+
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
 
             goto break_socket;
-        } else if (data["version"]["major"] < server_config::version::major) {
+        } else if (version_major < server_config::version::major) {
             logerr("Socket with handle %d has been terminated due to having an unsupported version.", socket_id);
 
-            std::string handshake_failure = nlohmann::json({
-                { "error", true },
-                { "data", {
-                    { "code", errors::outdated_client_version },
-                    { "text", errors::text[errors::outdated_client_version] }
-                }}
-            }).dump();
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::outdated_client_version, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::outdated_client_version], data_object.GetAllocator());
 
-            send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
             
             goto break_socket;
         }
 
-        // If the handshake object has an auth object which holds username and password.
-        if (!data.contains("auth") || !data["auth"].is_object()) throw std::exception();
-        if (
-            !data["auth"].contains("username") || !data["auth"]["username"].is_string() ||
-            !data["auth"].contains("password") || !data["auth"]["password"].is_string()
-        ) throw std::exception();
+        // Get the auth details from the handshake.
+        simdjson::ondemand::object auth_object = data["auth"];
 
-        std::string username = data["auth"]["username"];
-        std::string password = data["auth"]["password"];
+        // Have to be std::string's since the map requires a string, and password for convenience.
+        std::string username = std::string((std::string_view)auth_object["username"]);
+        std::string password = std::string((std::string_view)auth_object["password"]);
 
         // Find the user account.
         auto account_lookup = database_accounts->find(username);
         if (account_lookup == database_accounts->end()) {
             logerr("Socket with handle %d has been terminated due to providing an invalid username.", socket_id);
 
-            std::string handshake_failure = nlohmann::json({
-                { "error", true },
-                { "data", {
-                    { "code", errors::invalid_account_credentials },
-                    { "text", errors::text[errors::invalid_account_credentials] }
-                }}
-            }).dump();
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::invalid_account_credentials, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::invalid_account_credentials], data_object.GetAllocator());
 
-            send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
             
             goto break_socket;
         }
@@ -268,15 +309,17 @@ void* client_connection_handle(void* arg) {
         if (!crypto::password::equal((char*)password.c_str(), &account->password)) {
             logerr("Socket with handle %d has been terminated due to providing an invalid password.", socket_id);
 
-            std::string handshake_failure = nlohmann::json({
-                { "error", true },
-                { "data", {
-                    { "code", errors::invalid_account_credentials },
-                    { "text", errors::text[errors::invalid_account_credentials] }
-                }}
-            }).dump();
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::invalid_account_credentials, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::invalid_account_credentials], data_object.GetAllocator());
 
-            send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
             
             goto break_socket;
         }
@@ -286,16 +329,14 @@ void* client_connection_handle(void* arg) {
         socket_data->account = account;
         
 
-        nlohmann::json handshake_object = nlohmann::json::object_t();
+        rapidjson::Document handshake_object;
+        handshake_object.SetObject();
 
         DH* dh = NULL;
 
-        if (data.contains("cipher")) {
-            if (!data["cipher"].is_object()) throw std::exception();
-            nlohmann::json encryption = data["cipher"];
-
-            if (!encryption.contains("algorithm") || !encryption["algorithm"].is_string()) throw std::exception();
-            std::string type = encryption["algorithm"];
+        simdjson::ondemand::object cipher_object;
+        if (data["cipher"].get(cipher_object) == 0) {
+            std::string_view type = cipher_object["algorithm"];
 
             if (type == "diffie-hellman-aes256-cbc") {
                 // Create a key exchange session.
@@ -306,61 +347,62 @@ void* client_connection_handle(void* arg) {
                 crypto::random_bytes(socket_data->encryption.aes_server_iv, 16);
                 memcpy(socket_data->encryption.aes_client_iv, socket_data->encryption.aes_server_iv, 16);
 
-                handshake_object["cipher"] = nlohmann::json::object_t();
-                handshake_object["cipher"]["public_key"] = crypto::dh::export_public_key(dh);
-                handshake_object["cipher"]["prime"] = crypto::dh::export_prime(dh);
-                handshake_object["cipher"]["generator"] = 2;
-                handshake_object["cipher"]["initial_iv"] = base64::quick_encode(socket_data->encryption.aes_server_iv, 16); 
+                rapidjson::Document cipher_object;
+                cipher_object.SetObject();
+                cipher_object.AddMember("public_key", crypto::dh::export_public_key(dh), cipher_object.GetAllocator());
+                cipher_object.AddMember("prime", crypto::dh::export_prime(dh), cipher_object.GetAllocator());
+                cipher_object.AddMember("generator", 2, cipher_object.GetAllocator());
+                cipher_object.AddMember("initial_iv", base64::quick_encode(socket_data->encryption.aes_server_iv, 16), cipher_object.GetAllocator());
+
+                handshake_object.AddMember("cipher", cipher_object, handshake_object.GetAllocator());
             } else throw std::exception();
             
         } else if (server_config::force_encrypted_traffic) {
             logerr("Socket with handle %d has been terminated due to not being encrypted despite server requiring it", socket_id);
 
-            std::string handshake_failure = nlohmann::json({
-                { "error", true },
-                { "data", {
-                    { "code", errors::traffic_encryption_mandatory },
-                    { "text", errors::text[errors::traffic_encryption_mandatory] }
-                }}
-            }).dump();
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::traffic_encryption_mandatory, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::traffic_encryption_mandatory], data_object.GetAllocator());
 
-            send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
             
             goto break_socket;
         }
         
-        if (data.contains("options")) {
-            if (!data["options"].is_object()) throw std::exception();
-
-            auto options = data["options"];
-            
-            if (options.contains("short_attributes")) {
-                if (!options["short_attributes"].is_boolean()) throw std::exception();
-                socket_data->config.short_attr = options["short_attributes"];
-                short_attr = options["short_attributes"];
+        simdjson::ondemand::object options_object;
+        if (data["options"].get(options_object) == 0) {
+            bool short_attributes_setting;
+            if (options_object["short_attributes"].get(short_attributes_setting) == 0) {
+                socket_data->config.short_attr = short_attributes_setting;
+                short_attr = short_attributes_setting;
             }
 
-            if (options.contains("error_text")) {
-                if (!options["error_text"].is_boolean()) throw std::exception();
-                socket_data->config.error_text = options["error_text"];
-                error_text = options["error_text"];
+            bool error_text_setting;
+            if (options_object["error_text"].get(error_text_setting) == 0) {
+                socket_data->config.error_text = error_text_setting;
+                error_text = error_text_setting;
             }
         }
 
-        socket_data->version.major = data["version"]["major"];
-        socket_data->version.minor = data["version"]["minor"];
+        socket_data->version.major = version_major;
+        socket_data->version.minor = version_minor;
 
         log("Socket with handle %d and username '%s' performed a successful handshake with client version %d.%d", socket_id, account->username, socket_data->version.major, socket_data->version.minor);
     
         // Send back handshake success.
-        handshake_object["version"] = {
-            { "major", server_config::version::major },
-            { "minor", server_config::version::minor }
-        };
+        rapidjson::Document version_server_object;
+        version_server_object.SetObject();
+        version_server_object.AddMember("major", server_config::version::major, version_server_object.GetAllocator());
+        version_server_object.AddMember("minor", server_config::version::minor, version_server_object.GetAllocator());
+        handshake_object.AddMember("version", version_server_object, handshake_object.GetAllocator());
 
-        std::string handshake_success = handshake_object.dump();
-
-        send(socket_id, handshake_success.c_str(), handshake_success.length(), 0);
+        send_json(socket_data, handshake_object);
 
         // If cipher is enabled, wait for a follow up message.
         if (socket_data->encryption.enabled) {
@@ -377,13 +419,12 @@ void* client_connection_handle(void* arg) {
             incoming_buffer[incoming_bytes] = 0;
 
             // Parse the data.
-            data = nlohmann::json::parse(incoming_buffer);
-            if (!data.contains("public_key")) throw std::exception();
+            data = socket_data->parser.iterate(incoming_buffer, incoming_bytes, HANDSHAKE_BUFFER_SIZE);
 
-            std::string public_key = data["public_key"];
+            std::string_view public_key = data["public_key"];
 
             // Compute the secret.
-            char* raw_secret = crypto::dh::compute_secret(dh, public_key);
+            char* raw_secret = crypto::dh::compute_secret(dh, std::string(public_key));
 
             // Copy only 32 bytes since that's what AES256 supports.
             memcpy(socket_data->encryption.aes_secret, raw_secret, 32);
@@ -401,25 +442,26 @@ void* client_connection_handle(void* arg) {
             base64::encode(socket_data->encryption.aes_secret, 32, dest);
             log("Secret calculated as: %s", dest);
 
-            nlohmann::json::object_t data = {};
-            nlohmann::json dataObj = data;
+            rapidjson::Document res_object;
+            res_object.SetObject();
 
-            std::string rawData = dataObj.dump();
-            send(socket_id, rawData.c_str(), rawData.length(), 0);
+            send_json(socket_data, res_object);
         }
     } catch(std::exception& e) {
         logerr("Socket with handle %d has been terminated due to an invalid handshake", socket_id);
         
         // Send handshake failure.
-        std::string handshake_failure = nlohmann::json({
-            { "error", true },
-            { "data", {
-                { "code", errors::handshake_config_json_invalid },
-                { "text", errors::text[errors::handshake_config_json_invalid] }
-            }}
-        }).dump();
+        rapidjson::Document data_object;
+        data_object.SetObject();
+        data_object.AddMember(short_attr ? code_short : code_long, errors::handshake_config_json_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::handshake_config_json_invalid], data_object.GetAllocator());
 
-        send(socket_id, handshake_failure.c_str(), handshake_failure.length(), 0);
+        rapidjson::Document object;
+        object.SetObject();
+        object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+        object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+        send_json(socket_data, object);
 
         goto break_socket;
     }
@@ -449,32 +491,41 @@ void* client_connection_handle(void* arg) {
 
         // Check if the packet is too large.
         if (remaining_size > MAX_PACKET_SIZE) {
-            logerr("Socket with handle %d has been terminated due to packet exceeding 100M", socket_id);
+            logerr("Socket with handle %d has been terminated due to packet exceeding max size", socket_id);
 
-            send_json(socket_data, {
-                { short_attr ? "e" : "error", true },
-                { short_attr ? "d" : "data", {
-                    { short_attr ? "c" : "code", errors::packet_size_exceeded },
-                    { short_attr ? "t" : "text", error_text ? errors::text[errors::packet_size_exceeded] : "" }
-                }}
-            });
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::packet_size_exceeded, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::packet_size_exceeded], data_object.GetAllocator());
+
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
 
             goto break_socket;
         }
 
-        // Allocate space for the packet.
-        buffer = (uint8_t*)malloc(remaining_size);
+        // Allocate space for the packet (+ simdjson padding).
+        buffer = (uint8_t*)malloc(remaining_size + simdjson::SIMDJSON_PADDING);
         size_t size = remaining_size;
+        uint32_t actual_data_size = remaining_size - 1;
 
         // Check if the buffer has been allocated.
         if (buffer == nullptr) {
-            send_json(socket_data, {
-                { short_attr ? "e" : "error", true },
-                { short_attr ? "d" : "data", {
-                    { short_attr ? "c" : "code", errors::insufficient_memory },
-                    { short_attr ? "t" : "text", error_text ? errors::text[errors::insufficient_memory] : "" }
-                }}
-            });
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::insufficient_memory, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::insufficient_memory], data_object.GetAllocator());
+
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
 
             goto break_socket;
         }
@@ -505,13 +556,17 @@ void* client_connection_handle(void* arg) {
         // Check for terminator at the end.
         if (*(buffer_ptr - 1) != 0) {
             logerr("Buffer overrun protection triggered from socket handle %d", socket_id);
-            send_json(socket_data, {
-                { short_attr ? "e" : "error", true },
-                { short_attr ? "d" : "data", {
-                    { short_attr ? "c" : "code", errors::overflow_protection_triggered },
-                    { short_attr ? "t" : "text", error_text ? errors::text[errors::overflow_protection_triggered] : "" }
-                }}
-            });
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(short_attr ? code_short : code_long, errors::overflow_protection_triggered, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::overflow_protection_triggered], data_object.GetAllocator());
+
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
+            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
 
             goto break_socket;
         }
@@ -529,12 +584,13 @@ void* client_connection_handle(void* arg) {
                 (char*)buffer, size - 1, output_buffer
             );
 
+            actual_data_size = decrypt_size;
             output_buffer[decrypt_size] = 0;
             free(buffer);
         } else output_buffer = (char*)buffer;
 
         // Data can now be processed. Pass it to the relevant handlers.
-        bool msg_handle = process_message(output_buffer, socket_data);
+        bool msg_handle = process_message(output_buffer, actual_data_size, socket_data);
         if (msg_handle == true) goto break_socket;
 
         // The buffer is no longer needed.
