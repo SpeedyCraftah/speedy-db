@@ -169,6 +169,23 @@ namespace query_compiler {
             compiled_query->seek_direction = seek_direction == 1;
         }
 
+        simdjson::ondemand::array return_columns;
+        if (query_object["return"].get(return_columns) == simdjson::error_code::SUCCESS) {
+            // Return no columns by default.
+            size_t filtered_columns = 0;
+
+            for (std::string_view column_name : return_columns) {
+                auto column_find = table->columns.find(column_name);
+                if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
+                table_column& f_column = column_find->second;
+
+                // Set the bit for the column.
+                filtered_columns |= (1 << f_column.index);
+            }
+
+            compiled_query->columns_returned = filtered_columns;
+        }
+
         // Prevent smart pointers from deallocating.
         conditions.release();
 
