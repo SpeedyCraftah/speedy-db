@@ -10,6 +10,7 @@
 namespace query_compiler {
     enum error {
         COLUMN_NOT_FOUND,
+        RETURN_COLUMN_NOT_FOUND,
         TOO_MANY_CMP_OPS,
         TOO_MANY_UPDATE_OPS,
         INVALID_CONDITION,
@@ -99,6 +100,8 @@ namespace query_compiler {
 
     // TODO note - compare performance between using bitfield for result limits or an array, or both.
     // TODO - consider memory deallocation
+
+    // TODO - set column amount limit to (sizeof(size_t) * 8)
 
     struct CompiledFindQuery {
         GenericQueryComparison* conditions;
