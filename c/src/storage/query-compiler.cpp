@@ -22,16 +22,8 @@ namespace query_compiler {
             query_compiler::error errorCode_;
     };
 
-    CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
-        // TODO - use existing buffer?
-        std::unique_ptr<CompiledFindQuery> compiled_query(new CompiledFindQuery);
-        
-        simdjson::ondemand::object conditions_object = query_object["where"];
-
-        // Create buffer which should cover every condition operation.
-        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
-        compiled_query->conditions = conditions.get();
-
+    // Reusable functions.
+    uint32_t parse_conditions(ActiveTable* table, GenericQueryComparison conditions[], simdjson::ondemand::object& conditions_object) {
         // Iterate over the conditional queries and count queries.
         uint32_t conditions_count = 0;
         for (auto condition : conditions_object) {
@@ -155,6 +147,23 @@ namespace query_compiler {
                 if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
             }
         }
+
+        return conditions_count;
+    }
+
+
+    CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+        // TODO - use existing buffer?
+        std::unique_ptr<CompiledFindQuery> compiled_query(new CompiledFindQuery);
+        
+        simdjson::ondemand::object conditions_object = query_object["where"];
+
+        // Create buffer which should cover every condition operation.
+        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+        compiled_query->conditions = conditions.get();
+
+        // Process all WHERE conditions.
+        compiled_query->conditions_count = parse_conditions(table, conditions.get(), conditions_object);
 
         // Check for query return limits (ignored on findOne).
         // TODO - check before checking for limit, performance penalty on invalid elements.
