@@ -195,6 +195,18 @@ namespace query_compiler {
             compiled_query->columns_returned = filtered_columns;
         }
 
+        // Check for a seek_where statement.
+        simdjson::ondemand::object seek_where_conditions;
+        if (query_object["seek_where"].get(seek_where_conditions) == simdjson::error_code::SUCCESS) {
+            std::unique_ptr<GenericQueryComparison[]> seek_conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+            compiled_query->seek_conditions = seek_conditions.get();
+
+            // Process the conditions.
+            compiled_query->seek_conditions_count = parse_conditions(table, seek_conditions.get(), seek_where_conditions);
+
+            seek_conditions.release();
+        } 
+
         // Prevent smart pointers from deallocating.
         conditions.release();
 
