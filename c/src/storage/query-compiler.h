@@ -107,6 +107,9 @@ namespace query_compiler {
         GenericQueryComparison* conditions;
         uint32_t conditions_count = 0;
 
+        GenericQueryComparison* seek_conditions;
+        uint32_t seek_conditions_count = 0;
+
         bool seek_direction = true; // false = end-start, true = start-end
         size_t limit = 0;
         size_t columns_returned = SIZE_MAX;
