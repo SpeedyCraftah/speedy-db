@@ -381,6 +381,10 @@ void* client_connection_handle(void* arg) {
             if (options_object["short_attributes"].get(short_attributes_setting) == 0) {
                 socket_data->config.short_attr = short_attributes_setting;
                 short_attr = short_attributes_setting;
+
+                // Set the key strings.
+                socket_data->key_strings.data = rapidjson::GenericStringRef<char>(short_attributes_setting ? "d" : "data");
+                socket_data->key_strings.nonce = rapidjson::GenericStringRef<char>(short_attributes_setting ? "n" : "nonce");
             }
 
             bool error_text_setting;

@@ -28,6 +28,11 @@ struct client_socket_data {
         bool error_text = true; // error_text
     };
 
+    struct key_strings_t {
+        rapidjson::GenericStringRef<char> nonce = "nonce";
+        rapidjson::GenericStringRef<char> data = "data";
+    };
+
     struct encryption_t {
         bool enabled = false;
         char aes_secret[32];
@@ -41,6 +46,7 @@ struct client_socket_data {
     int socket_id;
     char address[16];
     config_t config;
+    key_strings_t key_strings;
     version_t version;  
     uint64_t last_packet_time = 0;
     DatabaseAccount* account;
