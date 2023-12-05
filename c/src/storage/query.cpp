@@ -3,6 +3,7 @@
 #include "../deps/json.hpp"
 #include "../connections/client.h"
 #include <regex>
+#include <string_view>
 #include <sys/types.h>
 #include <thread>
 #include <unistd.h>
@@ -24,12 +25,12 @@ const char* type_int_to_string(types type) {
     else return nullptr;
 }
 
-types type_string_to_int(const char* type) {
-    if (strcmp(type, "integer") == 0) return types::integer;
-    else if (strcmp(type, "string") == 0) return types::string;
-    else if (strcmp(type, "byte") == 0) return types::byte;
-    else if (strcmp(type, "float") == 0) return types::float32;
-    else if (strcmp(type, "long") == 0) return types::long64;
+types type_string_to_int(std::string_view type) {
+    if (type == "integer") return types::integer;
+    else if (type == "string") return types::string;
+    else if (type == "byte") return types::byte;
+    else if (type == "float") return types::float32;
+    else if (type == "long") return types::long64;
     else return (types)-1;
 }
 
