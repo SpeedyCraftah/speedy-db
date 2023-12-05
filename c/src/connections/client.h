@@ -31,6 +31,9 @@ struct client_socket_data {
     struct key_strings_t {
         rapidjson::GenericStringRef<char> nonce = "nonce";
         rapidjson::GenericStringRef<char> data = "data";
+        rapidjson::GenericStringRef<char> error = "error";
+        rapidjson::GenericStringRef<char> error_code = "code";
+        rapidjson::GenericStringRef<char> error_text = "text";
     };
 
     struct encryption_t {

@@ -385,6 +385,9 @@ void* client_connection_handle(void* arg) {
                 // Set the key strings.
                 socket_data->key_strings.data = rapidjson::GenericStringRef<char>(short_attributes_setting ? "d" : "data");
                 socket_data->key_strings.nonce = rapidjson::GenericStringRef<char>(short_attributes_setting ? "n" : "nonce");
+                socket_data->key_strings.error = rapidjson::GenericStringRef<char>(short_attributes_setting ? "e" : "error");
+                socket_data->key_strings.error_code = rapidjson::GenericStringRef<char>(short_attributes_setting ? "c" : "code");
+                socket_data->key_strings.error_text = rapidjson::GenericStringRef<char>(short_attributes_setting ? "t" : "text");
             }
 
             bool error_text_setting;
