@@ -54,7 +54,8 @@ const rapidjson::GenericStringRef<char> errors::text[] = {
     "The number value you have provided is an internally reserved value and cannot be used.",
     "The account username you provided does not belong to any account.",
     "This account does not have access to the privileges required to perform this operation.",
-    "Your query has too many WHERE conditions and cannot be processed due to efficiency reasons."
+    "Your query has too many WHERE conditions and cannot be processed due to efficiency reasons.",
+    "Your query defines too many columns, reduce the number of columns and try again."
 };
 
 // A function which sends data to the socket across a TCP stream which supports
@@ -388,6 +389,7 @@ void* client_connection_handle(void* arg) {
                 socket_data->key_strings.error = rapidjson::GenericStringRef<char>(short_attributes_setting ? "e" : "error");
                 socket_data->key_strings.error_code = rapidjson::GenericStringRef<char>(short_attributes_setting ? "c" : "code");
                 socket_data->key_strings.error_text = rapidjson::GenericStringRef<char>(short_attributes_setting ? "t" : "text");
+                socket_data->key_strings.sj_data = short_attributes_setting ? "d" : "data";
             }
 
             bool error_text_setting;

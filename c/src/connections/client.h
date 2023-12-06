@@ -34,6 +34,8 @@ struct client_socket_data {
         rapidjson::GenericStringRef<char> error = "error";
         rapidjson::GenericStringRef<char> error_code = "code";
         rapidjson::GenericStringRef<char> error_text = "text";
+
+        std::string_view sj_data = "data";
     };
 
     struct encryption_t {
@@ -86,7 +88,8 @@ namespace errors {
         value_reserved,
         username_not_found,
         insufficient_privileges,
-        too_many_conditions
+        too_many_conditions,
+        too_many_columns
     };
 
     extern const rapidjson::GenericStringRef<char> text[];
