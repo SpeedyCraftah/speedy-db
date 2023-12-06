@@ -2,6 +2,7 @@
 
 #include "../deps/json.hpp"
 #include "../connections/client.h"
+#include <memory>
 #include <regex>
 #include <string_view>
 #include <sys/types.h>
@@ -25,7 +26,7 @@ const char* type_int_to_string(types type) {
     else return nullptr;
 }
 
-types type_string_to_int(std::string_view type) {
+types type_string_to_int(std::string_view& type) {
     if (type == "integer") return types::integer;
     else if (type == "string") return types::string;
     else if (type == "byte") return types::byte;
@@ -34,54 +35,60 @@ types type_string_to_int(std::string_view type) {
     else return (types)-1;
 }
 
-void send_query_response(client_socket_data* socket_data, int nonce, nlohmann::json& data) {
-    send_json(socket_data, {
-        { socket_data->config.short_attr ? "n" : "nonce", nonce },
-        { socket_data->config.short_attr ? "d" : "data", data }
-    });
+// TODO - optimisation needs to be looked into
+
+void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
+    response_object.AddMember(socket_data->key_strings.data, data, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
 }
 
 void send_query_response(client_socket_data* socket_data, int nonce) {
-    send_json(socket_data, {
-        { socket_data->config.short_attr ? "n" : "nonce", nonce }
-    });
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
 }
 
 void send_query_error(client_socket_data* socket_data, int nonce, int error) {
-    send_json(socket_data, {
-        { socket_data->config.short_attr ? "n" : "nonce", nonce },
-        { socket_data->config.short_attr ? "d" : "data", {
-            { socket_data->config.short_attr ? "c" : "code", error },
-            { socket_data->config.short_attr ? "t" : "text", socket_data->config.error_text ? errors::text[error] : "" }
-        }},
-        { socket_data->config.short_attr ? "e" : "error", true }
-    });
+    rapidjson::Document data_object;
+    data_object.AddMember(socket_data->key_strings.error_code, error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(socket_data->key_strings.error_text, errors::text[error], data_object.GetAllocator());
+
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
+    response_object.AddMember(socket_data->key_strings.data, data_object, response_object.GetAllocator());
+    response_object.AddMember(socket_data->key_strings.error, 1, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
 }
 
 // TODO - convert all to this
 #define query_error(error) send_query_error(socket_data, nonce, error)
 
-void process_query(client_socket_data* socket_data, uint nonce, const nlohmann::json& data) {
+// TODO - remove op-o conversion in js
+void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::object& data) {
     int socket_id = socket_data->socket_id;
     bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
     DatabaseAccount* account = socket_data->account;
 
-    /*if (data.contains(short_attr ? "n" : "nonce") && data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
-        nonce = data[short_attr ? "n" : "nonce"];
-    }*/
+    uint op;
+    simdjson::ondemand::object d;
 
-    if (!data.contains(short_attr ? "o" : "op") || !data[short_attr ? "o" : "op"].is_number_unsigned()) {
+    if (data["op"].get(op) != simdjson::error_code::SUCCESS) {
         send_query_error(socket_data, nonce, errors::op_invalid);
         return;
-    } else if (!data.contains(short_attr ? "d" : "data") || !data[short_attr ? "d" : "data"].is_object()) {
+    } else if (data[socket_data->key_strings.sj_data].get(d) != simdjson::error_code::SUCCESS) {
         send_query_error(socket_data, nonce, errors::data_invalid);
         return;
     }
 
-    auto d = data[short_attr ? "d" : "data"];
-    uint op = data[short_attr ? "o" : "op"];
-    
     if (op >= query_ops::no_query_found_placeholder) {
         send_query_error(socket_data, nonce, errors::op_invalid);
         return;
@@ -99,21 +106,22 @@ void process_query(client_socket_data* socket_data, uint nonce, const nlohmann::
                 return;
             }
 
-            if (!d.contains("table") || !d["table"].is_string()) {
+            // TODO - try not to use string
+            std::string name;
+            if (d["table"].get(name) != simdjson::error_code::SUCCESS) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
-            std::string name = d["table"];
-
             // If name starts with a reserved sequence.
-            if (name.find("--internal") == 0) {
+            // TODO - check for vulnerabilities.
+            if (name.starts_with("--internal")) {
                 send_query_error(socket_data, nonce, errors::name_reserved);
                 return;
             }
 
             // Check if table is already open.
-            if (open_tables->count(name) == 1) {
+            if (open_tables->contains(name)) {
                 send_query_error(socket_data, nonce, errors::table_already_open);
                 return;
             }
@@ -136,25 +144,28 @@ void process_query(client_socket_data* socket_data, uint nonce, const nlohmann::
         case query_ops::create_table: {
             if (!account->permissions.CREATE_TABLES) return query_error(errors::insufficient_privileges);
 
+            std::string name;
+            simdjson::ondemand::object columns_object;
             if (
-                !d.contains("name") || !d["name"].is_string() ||
-                !d.contains("columns") || !d["columns"].is_object()
+                d["name"].get(name) != simdjson::error_code::SUCCESS || 
+                d["columns"].get(columns_object) != simdjson::error_code::SUCCESS
             ) return query_error(errors::params_invalid);
 
-            if (d["columns"].size() == 0) {
+            if (columns_object.is_empty()) {
                 send_query_error(socket_data, nonce, errors::params_invalid);
                 return;
             }
 
-            if (d["columns"].size() > 20) {
-                send_query_error(socket_data, nonce, errors::packet_size_exceeded);
+            // Slow but doesn't matter in this query.
+            size_t columns_object_count = columns_object.count_fields();
+
+            if (columns_object_count > 20) {
+                send_query_error(socket_data, nonce, errors::too_many_columns);
                 return;
             }
 
-            std::string name = d["name"];
-
             // If name starts with a reserved sequence.
-            if (name.find("--internal") == 0) {
+            if (name.starts_with("--internal")) {
                 send_query_error(socket_data, nonce, errors::name_reserved);
                 return;
             }
@@ -172,32 +183,26 @@ void process_query(client_socket_data* socket_data, uint nonce, const nlohmann::
             }
 
             // Allocate space for the columns.
-            int iteration = 0;
-            table_column* columns = (table_column*)malloc(d["columns"].size() * sizeof(table_column));
+            size_t iteration = 0;
 
-            for (auto& item : d["columns"].items()) {
+            std::unique_ptr<table_column[]> columns(new table_column[columns_object_count]);
+            for (auto item : columns_object) {
+                // C++ regex doesn't support string views :(
+                std::string_view key_sv = item.unescaped_key();
+                std::string key = {key_sv.begin(), key_sv.end()};
                 if (
-                    !std::regex_match(item.key(), std::regex("^[a-z_]+$")) ||
-                    item.key().length() > 32 || item.key().length() < 2
+                    !std::regex_match(key, std::regex("^[a-z_]+$")) ||
+                    key.length() > 32 || key.length() < 2
                 ) {
                     send_query_error(socket_data, nonce, errors::params_invalid);
                     return;
                 }
 
-                auto column_d = item.value();
-
-                if (
-                    !column_d.is_object() ||
-                    !column_d.contains("type") ||
-                    !column_d["type"].is_string()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
+                simdjson::ondemand::object column_d = item.value();
 
                 // Check if type exists.
-                std::string d = column_d["type"];
-                types type = type_string_to_int(d.c_str());
+                std::string_view d = column_d["type"];
+                types type = type_string_to_int(d);
 
                 if (type == -1) {
                     send_query_error(socket_data, nonce, errors::params_invalid);
@@ -216,17 +221,14 @@ void process_query(client_socket_data* socket_data, uint nonce, const nlohmann::
                 else if (type == types::long64) new_column.size = 8;
 
                 // Copy name.
-                strcpy(new_column.name, item.key().c_str());
+                strcpy(new_column.name, key.c_str());
 
                 columns[iteration] = new_column;
                 ++iteration;
             }
 
             // Create table.
-            create_table(name.c_str(), columns, d["columns"].size());
-
-            // Release columns.
-            free(columns);
+            create_table(name.c_str(), columns.get(), columns_object_count);
             
             send_query_response(socket_data, nonce);
             return;
