@@ -73,7 +73,7 @@ void send_query_error(client_socket_data* socket_data, int nonce, int error) {
 #define query_error(error) send_query_error(socket_data, nonce, error)
 
 // TODO - remove op-o conversion in js
-void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::object& data) {
+void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
     int socket_id = socket_data->socket_id;
     bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;

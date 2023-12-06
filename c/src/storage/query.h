@@ -30,4 +30,4 @@ namespace query_ops {
 }
 
 void send_query_error(client_socket_data* socket_data, int nonce, int error);
-void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::object& data);
+void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data);
