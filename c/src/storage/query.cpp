@@ -4,6 +4,7 @@
 #include "../connections/client.h"
 #include <memory>
 #include <regex>
+#include <string>
 #include <string_view>
 #include <sys/types.h>
 #include <thread>
@@ -17,13 +18,13 @@
 #include "table.h"
 #include <dirent.h>
 
-const char* type_int_to_string(types type) {
+std::string_view type_int_to_string(types type) {
     if (type == types::integer) return "integer";
     else if (type == types::string) return "string";
     else if (type == types::byte) return "byte";
     else if (type == types::float32) return "float";
     else if (type == types::long64) return "long";
-    else return nullptr;
+    else return std::string_view("");
 }
 
 types type_string_to_int(std::string_view& type) {
@@ -238,32 +239,18 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // TODO - dangerous permission since users can create accounts with permissions they dont have effectively 
             if (!account->permissions.CREATE_ACCOUNTS) return query_error(errors::insufficient_privileges);
 
-            if (
-                !d.contains("username") || !d["username"].is_string() ||
-                !d.contains("password") || !d["password"].is_string() ||
-                !d.contains("hierarchy_index") || !d["hierarchy_index"].is_number_unsigned() ||
-                !d.contains("permissions") || !d["permissions"].is_object()
-            ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            size_t hierarchy_index = d["hierarchy_index"];
 
             // If hierarchy index requested is more important or equal to current users index.
-            if ((unsigned int)d["hierarchy_index"] <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
-
-            // Ensure all items in the permissions object are booleans.
-            for (auto& item : d["permissions"]) {
-                if (!item.is_boolean()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-            }
+            if (hierarchy_index <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
 
             // Check if user is granting privileges which the current user does not have.
             // TODO - implement this, need to upgrade C++ to C++17+ for constexpr
 
-            std::string username = d["username"];
-            std::string password = d["password"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view password_sv = d["password"];
+            std::string password = {password_sv.begin(), password_sv.end()};
 
             // If username or passwords are too short or are too long.
             if (username.length() > 32 || username.length() < 2 || !misc::name_string_legal(username) || password.length() > 100 || password.length() < 2) {
@@ -278,7 +265,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             }
 
             // If hierarchy index is 0, or is above 1,000,000 which is reserved.
-            if ((unsigned int)d["hierarchy_index"] == 0 || (unsigned int)d["hierarchy_index"] > 1000000) {
+            if (hierarchy_index == 0 || hierarchy_index > 1000000) {
                 send_query_error(socket_data, nonce, errors::value_reserved);
                 return;
             }
@@ -295,16 +282,25 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             memset(&permissions, 0, sizeof(permissions));
 
             // Apply the hierarchy index.
-            permissions.HIERARCHY_INDEX = d["hierarchy_index"];
+            permissions.HIERARCHY_INDEX = hierarchy_index;
 
             // Set user-specified permissions, otherwise deny by default.
-            if (d["permissions"].contains("OPEN_CLOSE_TABLES")) permissions.OPEN_CLOSE_TABLES = d["permissions"]["OPEN_CLOSE_TABLES"];
-            if (d["permissions"].contains("CREATE_TABLES")) permissions.CREATE_TABLES = d["permissions"]["CREATE_TABLES"];
-            if (d["permissions"].contains("DELETE_TABLES")) permissions.DELETE_TABLES = d["permissions"]["DELETE_TABLES"];
-            if (d["permissions"].contains("CREATE_ACCOUNTS")) permissions.CREATE_ACCOUNTS = d["permissions"]["CREATE_ACCOUNTS"];
-            if (d["permissions"].contains("UPDATE_ACCOUNTS")) permissions.UPDATE_ACCOUNTS = d["permissions"]["UPDATE_ACCOUNTS"];
-            if (d["permissions"].contains("DELETE_ACCOUNTS")) permissions.DELETE_ACCOUNTS = d["permissions"]["DELETE_ACCOUNTS"];
-            if (d["permissions"].contains("TABLE_ADMINISTRATOR")) permissions.TABLE_ADMINISTRATOR = d["permissions"]["TABLE_ADMINISTRATOR"];
+            simdjson::ondemand::object permissions_object = d["permissions"];
+            for (auto permission : permissions_object) {
+                std::string_view key = permission.unescaped_key();
+                bool value = permission.value();
+
+                if (key == "OPEN_CLOSE_TABLES") permissions.OPEN_CLOSE_TABLES = value;
+                else if (key == "CREATE_TABLES") permissions.CREATE_TABLES = value;
+                else if (key == "DELETE_TABLES") permissions.DELETE_TABLES = value;
+                else if (key == "CREATE_ACCOUNTS") permissions.CREATE_ACCOUNTS = value;
+                else if (key == "UPDATE_ACCOUNTS") permissions.UPDATE_ACCOUNTS = value;
+                else if (key == "DELETE_ACCOUNTS") permissions.DELETE_ACCOUNTS = value;
+                else if (key == "TABLE_ADMINISTRATOR") permissions.TABLE_ADMINISTRATOR = value;
+                else throw errors::params_invalid;
+
+                
+            }
 
             // Save and load the account.
             create_database_account((char*)username.c_str(), (char*)password.c_str(), permissions);
@@ -317,12 +313,10 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         case query_ops::delete_database_account: {
             if (!account->permissions.DELETE_ACCOUNTS) return query_error(errors::insufficient_privileges);
 
-            if (!d.contains("username") || !d["username"].is_string()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
-
-            std::string username = d["username"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view password_sv = d["password"];
+            std::string password = {password_sv.begin(), password_sv.end()};
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
@@ -344,9 +338,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::fetch_account_privileges: {
-            if (!d.contains("username") || !d["username"].is_string()) return query_error(errors::params_invalid);
-
-            std::string username = d["username"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
@@ -358,15 +351,17 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             DatabaseAccount* t_account = account_lookup->second;
 
             // Convert the permission data into an object that can be sent.
-            nlohmann::json permissions = nlohmann::json::object();
-            permissions["CREATE_ACCOUNTS"] = (bool)t_account->permissions.CREATE_ACCOUNTS;
-            permissions["DELETE_ACCOUNTS"] = (bool)t_account->permissions.DELETE_ACCOUNTS;
-            permissions["UPDATE_ACCOUNTS"] = (bool)t_account->permissions.UPDATE_ACCOUNTS;
-            permissions["CREATE_TABLES"] = (bool)t_account->permissions.CREATE_TABLES;
-            permissions["DELETE_TABLES"] = (bool)t_account->permissions.DELETE_TABLES;
-            permissions["OPEN_CLOSE_TABLES"] = (bool)t_account->permissions.OPEN_CLOSE_TABLES;
-            permissions["TABLE_ADMINISTRATOR"] = (bool)t_account->permissions.TABLE_ADMINISTRATOR;
-            permissions["HIERARCHY_INDEX"] = t_account->permissions.HIERARCHY_INDEX;
+            // TODO - construct initial object once.
+            rapidjson::Document permissions;
+            permissions.SetObject();
+            permissions.AddMember("CREATE_ACCOUNTS", (bool)t_account->permissions.CREATE_ACCOUNTS, permissions.GetAllocator());
+            permissions.AddMember("DELETE_ACCOUNTS", (bool)t_account->permissions.DELETE_ACCOUNTS, permissions.GetAllocator());
+            permissions.AddMember("UPDATE_ACCOUNTS", (bool)t_account->permissions.UPDATE_ACCOUNTS, permissions.GetAllocator());
+            permissions.AddMember("CREATE_TABLES", (bool)t_account->permissions.CREATE_TABLES, permissions.GetAllocator());
+            permissions.AddMember("DELETE_TABLES", (bool)t_account->permissions.DELETE_TABLES, permissions.GetAllocator());
+            permissions.AddMember("OPEN_CLOSE_TABLES", (bool)t_account->permissions.OPEN_CLOSE_TABLES, permissions.GetAllocator());
+            permissions.AddMember("TABLE_ADMINISTRATOR", (bool)t_account->permissions.TABLE_ADMINISTRATOR, permissions.GetAllocator());
+            permissions.AddMember("HIERARCHY_INDEX", (bool)t_account->permissions.HIERARCHY_INDEX, permissions.GetAllocator());
 
             // Send the response.
             send_query_response(socket_data, nonce, permissions);
@@ -376,28 +371,13 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         case query_ops::set_table_account_privileges: {
             if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(errors::insufficient_privileges);
 
-            if (
-                !d.contains("username") || !d["username"].is_string() ||
-                !d.contains("permissions") || !d["permissions"].is_object() ||
-                !d.contains("table") || !d["table"].is_string()
-            ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
-
-            // Ensure all items in the permissions object are booleans.
-            for (auto& item : d["permissions"]) {
-                if (!item.is_boolean()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-            }
-
-            std::string username = d["username"];
-            std::string table_name = d["table"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view table_name_sv = d["password"];
+            std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
 
             // If table name starts with a reserved sequence.
-            if (table_name.find("--internal") == 0) {
+            if (table_name.starts_with("--internal")) {
                 send_query_error(socket_data, nonce, errors::name_reserved);
                 return;
             }
@@ -433,11 +413,19 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // TODO - could use with constexpr too
             // Set user specified permissions.
-            if (d["permissions"].contains("VIEW")) permissions.VIEW = d["permissions"]["VIEW"];
-            if (d["permissions"].contains("READ")) permissions.READ = d["permissions"]["READ"];
-            if (d["permissions"].contains("WRITE")) permissions.WRITE = d["permissions"]["WRITE"];
-            if (d["permissions"].contains("UPDATE")) permissions.UPDATE = d["permissions"]["UPDATE"];
-            if (d["permissions"].contains("ERASE")) permissions.ERASE = d["permissions"]["ERASE"];
+
+            simdjson::ondemand::object permissions_object = d["permissions"];
+            for (auto permission : permissions_object) {
+                std::string_view key = permission.unescaped_key();
+                bool value = permission.value();
+                
+                if (key == "VIEW") permissions.VIEW = value;
+                else if (key == "READ") permissions.READ = value;
+                else if (key == "WRITE") permissions.WRITE = value;
+                else if (key == "UPDATE") permissions.UPDATE = value;
+                else if (key == "ERASE") permissions.ERASE = value;
+                else errors::params_invalid;
+            }
 
             // Apply the table permissions to the account.
             set_table_account_permissions(table, t_account, permissions);
@@ -450,16 +438,10 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         case query_ops::fetch_account_table_permissions: {
             // TODO - do not allow unprivileged users to view permissions?
 
-            if (
-                !d.contains("username") || !d["username"].is_string() ||
-                !d.contains("table") || !d["table"].is_string()
-            ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
-
-            std::string username = d["username"];
-            std::string table_name = d["table"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view table_name_sv = d["password"];
+            std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
 
             // If table name starts with a reserved sequence.
             if (table_name.find("--internal") == 0) {
@@ -488,13 +470,13 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             const TablePermissions* permissions = get_table_permissions_for_account(table, t_account, false);
 
             // Construct the account permissions for the table.
-            nlohmann::json data = {
-                { "VIEW", permissions->VIEW },
-                { "READ", permissions->READ },
-                { "WRITE", permissions->WRITE },
-                { "UPDATE", permissions->UPDATE },
-                { "ERASE", permissions->ERASE }
-            };
+            rapidjson::Document data;
+            data.SetObject();
+            data.AddMember("VIEW", permissions->VIEW, data.GetAllocator());
+            data.AddMember("READ", permissions->READ, data.GetAllocator());
+            data.AddMember("WRITE", permissions->WRITE, data.GetAllocator());
+            data.AddMember("UPDATE", permissions->UPDATE, data.GetAllocator());
+            data.AddMember("ERASE", permissions->ERASE, data.GetAllocator());
 
             // Send the response.
             send_query_response(socket_data, nonce, data);
@@ -503,7 +485,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::fetch_database_tables: {
             // Create an array to hold the table names.
-            nlohmann::json tables = nlohmann::json::array();
+            rapidjson::Document tables;
+            tables.SetArray();
 
             // Open the data directory.
             DIR* dir;
@@ -519,7 +502,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Iterate over every directory.
             while ((ent = readdir(dir)) != NULL) {
                 if (ent->d_type == DT_DIR) {
-                    std::string name = std::string(ent->d_name);
+                    std::string_view name = ent->d_name;
 
                     // If name is "." or "..".
                     if (name == "." || name == "..") continue;
@@ -528,7 +511,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     if (name.find("--internal-") == 0) continue;
 
                     // Push table name to the array.
-                    tables.push_back(name);
+                    tables.PushBack(name, tables.GetAllocator());
                 }
             }
 
@@ -542,12 +525,13 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::fetch_database_accounts: {
             // Create an array to hold the account names.
-            nlohmann::json accounts = nlohmann::json::array();
+            rapidjson::Document accounts;
+            accounts.SetArray();
 
             // Iterate over accounts map.
             for (auto& element : *database_accounts) {
                 // Push the accout name to the array.
-                accounts.push_back(element.first);
+                accounts.PushBack(element.first, accounts.GetAllocator());
             }
 
             // Send the response.
@@ -561,13 +545,10 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
     }
 
     // OPs that require table past here.
-    
-    if (!d.contains("table") || !d["table"].is_string()) {
-        send_query_error(socket_data, nonce, errors::params_invalid);
-        return;
-    }
 
-    std::string name = d["table"];
+
+    std::string_view name_sv = d["table"];
+    std::string name = {name_sv.begin(), name_sv.end()};
 
     // Check if table is open.
     if (open_tables->count(name) == 0) {
@@ -588,16 +569,18 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     switch (op) {
         case query_ops::fetch_table_meta: {
-            auto json = nlohmann::json({
-                { "name", table->header.name },
-                { "column_count", (int)table->header.num_columns },
-                { "columns", {} }
-            });
+            rapidjson::Document json;
+            json.SetObject();
+            json.AddMember("name", std::string_view(table->header.name), json.GetAllocator());
+            json.AddMember("column_count", table->header.num_columns, json.GetAllocator());
+
+            rapidjson::Document columns;
+            columns.SetObject();
 
             // Iterate over columns.
             for (int i = 0; i < table->header.num_columns; i++) {
                 table_column& column = table->header_columns[i];
-                volatile int s = 5;
+                std::string_view column_name = column.name;
 
                 json["columns"][column.name] = {
                     { "name", column.name },
@@ -605,7 +588,20 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     { "type", type_int_to_string(column.type) },
                     { "physical_index", (int)column.index }
                 };
+
+                rapidjson::Document column_object;
+                column_object.SetObject();
+                column_object.AddMember("name", column_name, column_object.GetAllocator());
+                column_object.AddMember("size", column.size, column_object.GetAllocator());
+                column_object.AddMember("type", type_int_to_string(column.type), column_object.GetAllocator());
+                column_object.AddMember("physical_index", column.index, json.GetAllocator());
+
+                rapidjson::Value name;
+                name.SetString(column_name.data(), column_name.length());
+                columns.AddMember(name, column_object, columns.GetAllocator());
             }
+
+            json.AddMember("columns", columns, json.GetAllocator());
 
             send_query_response(socket_data, nonce, json);
             return;
@@ -1165,11 +1161,11 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             log("=== Table %s rebuild statistics ===\n- %u records discovered\n- %u dead records removed\n- %u short dynamics optimized", table->header.name, stats.record_count, stats.dead_record_count, stats.short_dynamic_count);
             log("=== Table %s rebuild statistics ===", table->header.name);
 
-            nlohmann::json data = {
-                {"short_dynamic_count", stats.short_dynamic_count},
-                {"dead_record_count", stats.dead_record_count},
-                {"record_count", stats.record_count}
-            };
+            rapidjson::Document data;
+            data.SetObject();
+            data.AddMember("short_dynamic_count", stats.short_dynamic_count, data.GetAllocator());
+            data.AddMember("dead_record_count", stats.dead_record_count, data.GetAllocator());
+            data.AddMember("record_count", stats.record_count, data.GetAllocator());
 
             send_query_response(socket_data, nonce, data);
             return;
