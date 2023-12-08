@@ -582,19 +582,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 table_column& column = table->header_columns[i];
                 std::string_view column_name = column.name;
 
-                json["columns"][column.name] = {
-                    { "name", column.name },
-                    { "size", (int)column.size },
-                    { "type", type_int_to_string(column.type) },
-                    { "physical_index", (int)column.index }
-                };
-
                 rapidjson::Document column_object;
                 column_object.SetObject();
                 column_object.AddMember("name", column_name, column_object.GetAllocator());
                 column_object.AddMember("size", column.size, column_object.GetAllocator());
                 column_object.AddMember("type", type_int_to_string(column.type), column_object.GetAllocator());
-                column_object.AddMember("physical_index", column.index, json.GetAllocator());
+                column_object.AddMember("physical_index", column.index, column_object.GetAllocator());
 
                 rapidjson::Value name;
                 name.SetString(column_name.data(), column_name.length());
