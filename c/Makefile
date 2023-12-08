@@ -3,7 +3,7 @@ files = $(wildcard ./src/*.cpp) $(wildcard ./src/**/*.cpp) $(wildcard ./src/*.c)
 flags = -pthread
 
 run:
-	g++ -std=c++20 -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS= -o ./bin/bin $(flags) $(files) -lcrypto
+	g++ -std=c++20 -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1 -o ./bin/bin $(flags) $(files) -lcrypto
 	./bin/bin password=test
 
 production:
