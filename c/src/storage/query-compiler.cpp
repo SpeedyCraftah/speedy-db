@@ -45,8 +45,8 @@ namespace query_compiler {
                 // String key compare operations are expensive, only check for possible combinations.
                 if (column.type == types::string) {
                     for (auto advanced_condition : cmp_object) {
-                        std::string_view advanced_key = condition.unescaped_key();
-                        auto advanced_value = condition.value();
+                        std::string_view advanced_key = advanced_condition.unescaped_key();
+                        auto advanced_value = advanced_condition.value();
 
                         if (advanced_key == "contains") {
                             // We don't get type checking with raw_json, so manually do it.
@@ -71,8 +71,8 @@ namespace query_compiler {
                 } else {
                     // TODO - shorten LT/LG ops to >/< for efficiency ?
                     for (auto advanced_condition : cmp_object) {
-                        std::string_view advanced_key = condition.unescaped_key();
-                        auto advanced_value = condition.value();
+                        std::string_view advanced_key = advanced_condition.unescaped_key();
+                        auto advanced_value = advanced_condition.value();
 
                         size_t buffer = 0;
 
@@ -130,7 +130,7 @@ namespace query_compiler {
                         // Correctly cast binary values based on type.
                         switch (value.get_number_type()) {
                             case number_type::floating_point_number: *((float*)&buffer) = (float)value.get_double(); break;
-                            case number_type::signed_integer: *((int*)&buffer) = (int)value; break;
+                            case number_type::signed_integer: *((int*)&buffer) = (int)value.get_int64(); break;
                             default: buffer = value.get_uint64(); break;
                         }
 
