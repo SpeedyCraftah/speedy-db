@@ -89,7 +89,7 @@ namespace query_compiler {
                         switch (column.type) {
                             case types::integer: *((int*)&buffer) = (int)advanced_value.get_int64(); break;
                             case types::float32: *((float*)&buffer) = (float)advanced_value.get_double(); break;
-                            default: buffer = advanced_value; break;
+                            default: buffer = advanced_value.get_uint64(); break;
                         }
 
                         cmp->comparator = buffer;
@@ -278,6 +278,136 @@ namespace query_compiler {
         columns_inserted.release();
 
         // Return query.
+        return compiled_query.release();
+    }
+
+    CompiledEraseQuery* compile_erase_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+        std::unique_ptr<CompiledEraseQuery> compiled_query(new CompiledEraseQuery);
+        
+        simdjson::ondemand::object conditions_object = query_object["where"];
+
+        // Create buffer which should cover every condition operation.
+        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+        compiled_query->conditions = conditions.get();
+
+        // Process all WHERE conditions.
+        compiled_query->conditions_count = parse_conditions(table, conditions.get(), conditions_object);
+
+        // Check for query return limits.
+        // TODO - check before checking for limit, performance penalty on invalid elements.
+        if (query_object["limit"].get(compiled_query->limit) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
+        // Check for seek direction.
+        // TODO - change query setting to boolean.
+        // TODO - check before checking for direction, performance penalty on invalid elements.
+        int seek_direction;
+        if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
+            if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
+            compiled_query->seek_direction = seek_direction == 1;
+        }
+
+        // Prevent smart pointers from deallocating.
+        conditions.release();
+
+        return compiled_query.release();
+    }
+
+    CompiledUpdateQuery* compile_update_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+        std::unique_ptr<CompiledUpdateQuery> compiled_query(new CompiledUpdateQuery);
+        
+        simdjson::ondemand::object conditions_object = query_object["where"];
+
+        // Create buffer which should cover every condition operation.
+        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+        compiled_query->conditions = conditions.get();
+
+        // Process all WHERE conditions.
+        compiled_query->conditions_count = parse_conditions(table, conditions.get(), conditions_object);
+
+        // Create buffer to hold every possible update operation.
+        std::unique_ptr<GenericUpdate[]> updates(new GenericUpdate[table->header.num_columns]);
+        compiled_query->changes = updates.get();
+
+        simdjson::ondemand::object updates_object = query_object["changes"];
+
+        // Process all update conditions.
+        // Not a copy of INSERT as updates have different operations and queries planned for future.
+        size_t columns_iterated = 0;
+        uint32_t updates_count = 0;
+        for (auto column_data : updates_object) {
+            std::string_view column_name = column_data.unescaped_key();
+            auto value = column_data.value();
+
+            auto column_find = table->columns.find(column_name);
+            if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
+            table_column& column = column_find->second;
+
+            // Check if column has already been iterated.
+            size_t column_bit = (1 << column.index);
+            if ((columns_iterated & column_bit) != 0) throw query_compiler::exception(error::DUPLICATE_COLUMNS);
+
+            // Set bit to indicate it has been iterated.
+            columns_iterated |= column_bit;
+
+            // Needed for future advanced expressions.
+            json_type value_type = value.type();
+
+            switch (column.type) {
+                case types::string: {
+                    if (value_type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
+                    std::string_view data = value.raw_json();
+                    data.remove_prefix(1);
+                    data.remove_suffix(1);
+
+                    StringUpdateSet* update = reinterpret_cast<StringUpdateSet*>(&updates[updates_count]);
+                    update->op = update_changes_op::STRING_SET;
+                    update->column_index = column.index;
+                    update->new_value = data;
+                    update->new_value_hash = XXH64(data.data(), data.length(), HASH_SEED);
+
+                    break;
+                }
+
+                default: {
+                    size_t buffer = 0;
+                    
+                    // Set data depending on type.
+                    switch (column.type) {
+                        case types::float32: *((float*)&buffer) = (float)value.get_double(); break;
+                        case types::integer: *((int*)&buffer) = (int)value.get_int64(); break;
+                        default: buffer = value.get_uint64(); break;
+                    }
+
+                    NumericUpdateSet* update = reinterpret_cast<NumericUpdateSet*>(&updates[updates_count]);
+                    update->op = update_changes_op::NUMERIC_SET;
+                    update->column_index = column.index;
+                    update->new_value = buffer;
+
+                    break;
+                }
+            }
+
+            updates_count++;
+        }
+
+        // Check for query return limits.
+        // TODO - check before checking for limit, performance penalty on invalid elements.
+        if (query_object["limit"].get(compiled_query->limit) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
+        // Check for seek direction.
+        // TODO - change query setting to boolean.
+        // TODO - check before checking for direction, performance penalty on invalid elements.
+        int seek_direction;
+        if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
+            if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
+            compiled_query->seek_direction = seek_direction == 1;
+        }
+
+        // Prevent smart pointers from deallocating.
+        conditions.release();
+        updates.release();
+
         return compiled_query.release();
     }
 };
