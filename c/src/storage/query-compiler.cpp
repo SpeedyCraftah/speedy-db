@@ -212,4 +212,72 @@ namespace query_compiler {
 
         return compiled_query.release();
     }
+
+    CompiledInsertQuery* compile_insert_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+        std::unique_ptr<CompiledInsertQuery> compiled_query(new CompiledInsertQuery);
+
+        // Allocate columns.length size of buffer since all columns are required at the moment for inserts.
+        std::unique_ptr<GenericInsertColumn[]> columns_inserted(new GenericInsertColumn[table->header.num_columns]); 
+        compiled_query->values = columns_inserted.get();
+
+        // Iterate over the columns specified.
+        size_t columns_iterated = 0;
+        for (auto column_data : query_object.get_object()) {
+            std::string_view column_name = column_data.unescaped_key();
+            auto value = column_data.value();
+
+            auto column_find = table->columns.find(column_name);
+            if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
+            table_column& column = column_find->second;
+
+            // Check if column has already been iterated.
+            size_t column_bit = (1 << column.index);
+            if ((columns_iterated & column_bit) != 0) throw query_compiler::exception(error::DUPLICATE_COLUMNS);
+
+            // Set bit to indicate it has been iterated.
+            columns_iterated |= column_bit;
+
+            // Set the column values.
+            switch (column.type) {
+                case types::string: {
+                    if (value.type() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
+                    std::string_view data = value.raw_json();
+                    data.remove_prefix(1);
+                    data.remove_suffix(1);
+
+                    StringInsertColumn* val = reinterpret_cast<StringInsertColumn*>(&columns_inserted[column.index]);
+                    val->data = data;
+
+                    break;
+                }
+
+                default: {
+                    size_t buffer = 0;
+                    
+                    // Set data depending on type.
+                    switch (column.type) {
+                        case types::float32: *((float*)&buffer) = (float)value.get_double(); break;
+                        case types::integer: *((int*)&buffer) = (int)value.get_int64(); break;
+                        default: buffer = value.get_uint64(); break;
+                    }
+
+                    NumericInsertColumn* val = reinterpret_cast<NumericInsertColumn*>(&columns_inserted[column.index]);
+                    val->data = buffer;
+
+                    break;
+                }
+            }
+        }
+
+        // Check if all columns have been specified.
+        // TODO - might overflow/act unexpectedly if column count is 64.
+        if (columns_iterated != (1 << table->header.num_columns) - 1) throw query_compiler::exception(error::UNSPECIFIED_COLUMNS);
+
+        // Release smart pointers.
+        columns_inserted.release();
+
+        // Return query.
+        return compiled_query.release();
+    }
 };
