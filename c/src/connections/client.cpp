@@ -185,7 +185,9 @@ bool process_message(const char* buffer, uint32_t data_size, client_socket_data*
                 break;
         }
     } catch (const query_compiler::exception& e) {
-        send_query_error(socket_data, query_nonce, )
+        send_query_error(socket_data, query_nonce, e.error());
+    } catch (const std::exception& e) {
+        send_query_error(socket_data, query_nonce, query_error::internal);
     }
     
     return false;
