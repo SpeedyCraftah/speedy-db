@@ -15,6 +15,7 @@
 #include <iostream>
 #include "../main.h"
 #include "../misc/valid_string.h"
+#include "query-compiler.h"
 #include "table.h"
 #include <dirent.h>
 
@@ -59,6 +60,21 @@ void send_query_error(client_socket_data* socket_data, int nonce, query_error er
     rapidjson::Document data_object;
     data_object.AddMember(socket_data->key_strings.error_code, error, data_object.GetAllocator());
     if (socket_data->config.error_text) data_object.AddMember(socket_data->key_strings.error_text, query_error_text[error], data_object.GetAllocator());
+
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
+    response_object.AddMember(socket_data->key_strings.data, data_object, response_object.GetAllocator());
+    response_object.AddMember(socket_data->key_strings.error, 1, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
+}
+
+// TODO - query and query compiler errors are the same, remove error code in response with next update.
+void send_query_error(client_socket_data* socket_data, int nonce, query_compiler::error error) {
+    rapidjson::Document data_object;
+    data_object.AddMember(socket_data->key_strings.error_code, error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(socket_data->key_strings.error_text, query_compiler::error_text[error], data_object.GetAllocator());
 
     rapidjson::Document response_object;
     response_object.SetObject();

@@ -5,6 +5,7 @@
 #include "../deps/simdjson/simdjson.h"
 #include "../deps/rapidjson/document.h"
 #include "../connections/client.h"
+#include "query-compiler.h"
 
 namespace query_ops {
     enum {
@@ -31,4 +32,6 @@ namespace query_ops {
 }
 
 void send_query_error(client_socket_data* socket_data, int nonce, query_error error);
+void send_query_error(client_socket_data* socket_data, int nonce, query_compiler::error error);
+
 void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data);
