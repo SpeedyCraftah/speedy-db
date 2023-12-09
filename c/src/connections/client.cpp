@@ -23,11 +23,12 @@
 #include "../deps/rapidjson/writer.h"
 #include "../deps/rapidjson/stringbuffer.h"
 #include "../deps/simdjson/simdjson.h"
+#include "../storage/query-compiler.h"
 
 #define MAX_PACKET_SIZE 104857600
 
 // Define the error text list.
-const rapidjson::GenericStringRef<char> errors::text[] = {
+const rapidjson::GenericStringRef<char> query_error_text[] = {
     "The provided JSON could not be parsed by the engine.",
     "The total size of the sent data exceeds the maximum packet size. This limit can be increased in the server settings.",
     "The buffer overflow protection has been triggered. This could be due to your query not containing a valid or correctly calculated header/terminator.",
@@ -154,8 +155,8 @@ bool process_message(const char* buffer, uint32_t data_size, client_socket_data*
     if (data[short_attr ? "n" : "nonce"].get(query_nonce) != 0) {
         rapidjson::Document data_object;
         data_object.SetObject();
-        data_object.AddMember(short_attr ? code_short : code_long, errors::nonce_invalid, data_object.GetAllocator());
-        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::nonce_invalid], data_object.GetAllocator());
+        data_object.AddMember(short_attr ? code_short : code_long, query_error::nonce_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::nonce_invalid], data_object.GetAllocator());
 
         rapidjson::Document object;
         object.SetObject();
@@ -174,15 +175,17 @@ bool process_message(const char* buffer, uint32_t data_size, client_socket_data*
     } catch (const simdjson::simdjson_error& e) {
         switch (e.error()) {
             case simdjson::error_code::INCORRECT_TYPE:
-                send_query_error(socket_data, query_nonce, errors::params_invalid);
+                send_query_error(socket_data, query_nonce, query_error::params_invalid);
                 break;
             case simdjson::error_code::MEMALLOC:
-                send_query_error(socket_data, query_nonce, errors::insufficient_memory);
+                send_query_error(socket_data, query_nonce, query_error::insufficient_memory);
                 break;
             default:
-                send_query_error(socket_data, query_nonce, errors::json_invalid);
+                send_query_error(socket_data, query_nonce, query_error::json_invalid);
                 break;
         }
+    } catch (const query_compiler::exception& e) {
+        send_query_error(socket_data, query_nonce, )
     }
     
     return false;
@@ -212,8 +215,8 @@ void* client_connection_handle(void* arg) {
 
         rapidjson::Document data_object;
         data_object.SetObject();
-        data_object.AddMember(short_attr ? code_short : code_long, errors::handshake_config_json_invalid, data_object.GetAllocator());
-        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::handshake_config_json_invalid], data_object.GetAllocator());
+        data_object.AddMember(short_attr ? code_short : code_long, query_error::handshake_config_json_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::handshake_config_json_invalid], data_object.GetAllocator());
 
         rapidjson::Document object;
         object.SetObject();
@@ -247,8 +250,8 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::outdated_server_version, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::outdated_server_version], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::outdated_server_version, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::outdated_server_version], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
@@ -263,8 +266,8 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::outdated_client_version, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::outdated_client_version], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::outdated_client_version, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::outdated_client_version], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
@@ -290,8 +293,8 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::invalid_account_credentials, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::invalid_account_credentials], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::invalid_account_credentials, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
@@ -312,8 +315,8 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::invalid_account_credentials, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::invalid_account_credentials], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::invalid_account_credentials, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
@@ -363,8 +366,8 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::traffic_encryption_mandatory, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::traffic_encryption_mandatory], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::traffic_encryption_mandatory, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::traffic_encryption_mandatory], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
@@ -462,8 +465,8 @@ void* client_connection_handle(void* arg) {
         // Send handshake failure.
         rapidjson::Document data_object;
         data_object.SetObject();
-        data_object.AddMember(short_attr ? code_short : code_long, errors::handshake_config_json_invalid, data_object.GetAllocator());
-        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::handshake_config_json_invalid], data_object.GetAllocator());
+        data_object.AddMember(short_attr ? code_short : code_long, query_error::handshake_config_json_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::handshake_config_json_invalid], data_object.GetAllocator());
 
         rapidjson::Document object;
         object.SetObject();
@@ -504,8 +507,8 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::packet_size_exceeded, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::packet_size_exceeded], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::packet_size_exceeded, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::packet_size_exceeded], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
@@ -526,8 +529,8 @@ void* client_connection_handle(void* arg) {
         if (buffer == nullptr) {
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::insufficient_memory, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::insufficient_memory], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::insufficient_memory, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::insufficient_memory], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
@@ -567,8 +570,8 @@ void* client_connection_handle(void* arg) {
             logerr("Buffer overrun protection triggered from socket handle %d", socket_id);
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, errors::overflow_protection_triggered, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, errors::text[errors::overflow_protection_triggered], data_object.GetAllocator());
+            data_object.AddMember(short_attr ? code_short : code_long, query_error::overflow_protection_triggered, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::overflow_protection_triggered], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();

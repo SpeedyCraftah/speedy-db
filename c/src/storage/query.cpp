@@ -55,10 +55,10 @@ void send_query_response(client_socket_data* socket_data, int nonce) {
     send_json(socket_data, response_object);
 }
 
-void send_query_error(client_socket_data* socket_data, int nonce, int error) {
+void send_query_error(client_socket_data* socket_data, int nonce, query_error error) {
     rapidjson::Document data_object;
     data_object.AddMember(socket_data->key_strings.error_code, error, data_object.GetAllocator());
-    if (socket_data->config.error_text) data_object.AddMember(socket_data->key_strings.error_text, errors::text[error], data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(socket_data->key_strings.error_text, query_error_text[error], data_object.GetAllocator());
 
     rapidjson::Document response_object;
     response_object.SetObject();
@@ -83,15 +83,15 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
     simdjson::ondemand::object d;
 
     if (data["op"].get(op) != simdjson::error_code::SUCCESS) {
-        send_query_error(socket_data, nonce, errors::op_invalid);
+        send_query_error(socket_data, nonce, query_error::op_invalid);
         return;
     } else if (data[socket_data->key_strings.sj_data].get(d) != simdjson::error_code::SUCCESS) {
-        send_query_error(socket_data, nonce, errors::data_invalid);
+        send_query_error(socket_data, nonce, query_error::data_invalid);
         return;
     }
 
     if (op >= query_ops::no_query_found_placeholder) {
-        send_query_error(socket_data, nonce, errors::op_invalid);
+        send_query_error(socket_data, nonce, query_error::op_invalid);
         return;
     }
 
@@ -103,33 +103,33 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::open_table: {
             if (!account->permissions.OPEN_CLOSE_TABLES) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
             // TODO - try not to use string
             std::string name;
             if (d["table"].get(name) != simdjson::error_code::SUCCESS) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
             // If name starts with a reserved sequence.
             // TODO - check for vulnerabilities.
             if (name.starts_with("--internal")) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // Check if table is already open.
             if (open_tables->contains(name)) {
-                send_query_error(socket_data, nonce, errors::table_already_open);
+                send_query_error(socket_data, nonce, query_error::table_already_open);
                 return;
             }
 
             // Check if table exists.
             if (!table_exists(name.c_str())) {
-                send_query_error(socket_data, nonce, errors::table_not_found);
+                send_query_error(socket_data, nonce, query_error::table_not_found);
                 return;
             }
 
@@ -143,17 +143,17 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::create_table: {
-            if (!account->permissions.CREATE_TABLES) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.CREATE_TABLES) return query_error(query_error::insufficient_privileges);
 
             std::string name;
             simdjson::ondemand::object columns_object;
             if (
                 d["name"].get(name) != simdjson::error_code::SUCCESS || 
                 d["columns"].get(columns_object) != simdjson::error_code::SUCCESS
-            ) return query_error(errors::params_invalid);
+            ) return query_error(query_error::params_invalid);
 
             if (columns_object.is_empty()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
@@ -161,25 +161,25 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             size_t columns_object_count = columns_object.count_fields();
 
             if (columns_object_count > 20) {
-                send_query_error(socket_data, nonce, errors::too_many_columns);
+                send_query_error(socket_data, nonce, query_error::too_many_columns);
                 return;
             }
 
             // If name starts with a reserved sequence.
             if (name.starts_with("--internal")) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             if (
                 name.length() > 32 || name.length() < 2 || !misc::name_string_legal(name)
             ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
             if (table_exists(name.c_str())) {
-                send_query_error(socket_data, nonce, errors::table_conflict);
+                send_query_error(socket_data, nonce, query_error::table_conflict);
                 return;
             }
 
@@ -195,7 +195,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     !std::regex_match(key, std::regex("^[a-z_]+$")) ||
                     key.length() > 32 || key.length() < 2
                 ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -206,7 +206,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 types type = type_string_to_int(d);
 
                 if (type == -1) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -237,12 +237,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::create_database_account: {
             // TODO - dangerous permission since users can create accounts with permissions they dont have effectively 
-            if (!account->permissions.CREATE_ACCOUNTS) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.CREATE_ACCOUNTS) return query_error(query_error::insufficient_privileges);
 
             size_t hierarchy_index = d["hierarchy_index"];
 
             // If hierarchy index requested is more important or equal to current users index.
-            if (hierarchy_index <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
+            if (hierarchy_index <= account->permissions.HIERARCHY_INDEX) return query_error(query_error::insufficient_privileges);
 
             // Check if user is granting privileges which the current user does not have.
             // TODO - implement this, need to upgrade C++ to C++17+ for constexpr
@@ -254,25 +254,25 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If username or passwords are too short or are too long.
             if (username.length() > 32 || username.length() < 2 || !misc::name_string_legal(username) || password.length() > 100 || password.length() < 2) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
             // If username is reserved by being called root.
             if (username == "root") {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // If hierarchy index is 0, or is above 1,000,000 which is reserved.
             if (hierarchy_index == 0 || hierarchy_index > 1000000) {
-                send_query_error(socket_data, nonce, errors::value_reserved);
+                send_query_error(socket_data, nonce, query_error::value_reserved);
                 return;
             }
 
             // If username is already taken.
             if (database_accounts->count(username) != 0) {
-                send_query_error(socket_data, nonce, errors::account_username_in_use);
+                send_query_error(socket_data, nonce, query_error::account_username_in_use);
                 return;
             }
 
@@ -297,7 +297,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (key == "UPDATE_ACCOUNTS") permissions.UPDATE_ACCOUNTS = value;
                 else if (key == "DELETE_ACCOUNTS") permissions.DELETE_ACCOUNTS = value;
                 else if (key == "TABLE_ADMINISTRATOR") permissions.TABLE_ADMINISTRATOR = value;
-                else throw errors::params_invalid;
+                else throw query_error::params_invalid;
 
                 
             }
@@ -311,7 +311,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::delete_database_account: {
-            if (!account->permissions.DELETE_ACCOUNTS) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.DELETE_ACCOUNTS) return query_error(query_error::insufficient_privileges);
 
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
@@ -321,14 +321,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             DatabaseAccount* t_account = account_lookup->second;
 
             // If target account has a higher or same hierarchy index.
-            if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
+            if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) return query_error(query_error::insufficient_privileges);
 
             delete_database_account(t_account);
 
@@ -344,7 +344,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
@@ -369,7 +369,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::set_table_account_privileges: {
-            if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(query_error::insufficient_privileges);
 
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
@@ -378,27 +378,27 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If table name starts with a reserved sequence.
             if (table_name.starts_with("--internal")) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // If username is reserved by being called root.
             if (username == "root") {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             // Find the table.
             auto table_lookup = open_tables->find(table_name);
             if (table_lookup == open_tables->end()) {
-                send_query_error(socket_data, nonce, errors::table_not_open);
+                send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
             }
 
@@ -424,7 +424,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (key == "WRITE") permissions.WRITE = value;
                 else if (key == "UPDATE") permissions.UPDATE = value;
                 else if (key == "ERASE") permissions.ERASE = value;
-                else errors::params_invalid;
+                else query_error::params_invalid;
             }
 
             // Apply the table permissions to the account.
@@ -445,21 +445,21 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If table name starts with a reserved sequence.
             if (table_name.find("--internal") == 0) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             // Find the table.
             auto table_lookup = open_tables->find(table_name);
             if (table_lookup == open_tables->end()) {
-                send_query_error(socket_data, nonce, errors::table_not_open);
+                send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
             }
 
@@ -495,7 +495,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If directory could not be opened.
             if (dir == NULL) {
-                send_query_error(socket_data, nonce, errors::internal);
+                send_query_error(socket_data, nonce, query_error::internal);
                 return;
             }
 
@@ -552,7 +552,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     // Check if table is open.
     if (open_tables->count(name) == 0) {
-        send_query_error(socket_data, nonce, errors::table_not_open);
+        send_query_error(socket_data, nonce, query_error::table_not_open);
         return;
     }
 
@@ -563,7 +563,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {
-        send_query_error(socket_data, nonce, errors::insufficient_privileges);
+        send_query_error(socket_data, nonce, query_error::insufficient_privileges);
         return;
     }
 
@@ -602,7 +602,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::close_table: {
             if (!account->permissions.OPEN_CLOSE_TABLES) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
@@ -617,41 +617,11 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::insert_record: {
             if (!table_permissions->WRITE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
-            // Check if all parameters are present.
-            if (table->header.num_columns != d["columns"].size()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
-
-            // Verify data.
-            for (auto& item : d["columns"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                // Validate type.
-                if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && (!column_d.is_number()) ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-            }
+            
 
             table->insert_record(d["columns"]);
             send_query_response(socket_data, nonce);
@@ -660,12 +630,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::find_one_record: {
             if (!table_permissions->READ) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
             if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
@@ -675,12 +645,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Allow user to specify a custom seek direction (default is start-end).
             if (d.contains("seek_direction")) {
                 if (!d["seek_direction"].is_number_integer()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
                 if (d["seek_direction"] != -1 && d["seek_direction"] != 1) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -694,20 +664,20 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 limited_results = true;
 
                 if (!d["return"].is_array()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
                 // Check values in the array.
                 for (auto& column : d["return"]) {
                     if (!column.is_string()) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
+                        send_query_error(socket_data, nonce, query_error::params_invalid);
                         return;
                     }
 
                     // Check if column exists.
                     if (table->columns.count(column) == 0) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
+                        send_query_error(socket_data, nonce, query_error::params_invalid);
                         return;
                     }
                 }
@@ -721,7 +691,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 // Check if column exists.
                 if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -737,14 +707,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                             (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
                             (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     } else if (column.type == types::string) {
                         if (
                             (column_d.contains("contains") && !column_d["contains"].is_string())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     }
@@ -755,7 +725,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     column.type == types::float32 && !column_d.is_number() ||
                     column.type == types::long64 && !column_d.is_number()
                 ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 } 
 
@@ -771,12 +741,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::find_all_records: {
             if (!table_permissions->READ) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
             if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
@@ -786,12 +756,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Allow user to specify a custom seek direction (default is start-end).
             if (d.contains("seek_direction")) {
                 if (!d["seek_direction"].is_number_integer()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
                 if (d["seek_direction"] != -1 && d["seek_direction"] != 1) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -802,7 +772,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             if (d.contains("limit")) {
                 if(!d["limit"].is_number_unsigned()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -816,20 +786,20 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 limited_results = true;
 
                 if (!d["return"].is_array()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
                 // Check values in the array.
                 for (auto& column : d["return"]) {
                     if (!column.is_string()) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
+                        send_query_error(socket_data, nonce, query_error::params_invalid);
                         return;
                     }
 
                     // Check if column exists.
                     if (table->columns.count(column) == 0) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
+                        send_query_error(socket_data, nonce, query_error::params_invalid);
                         return;
                     }
                 }
@@ -839,7 +809,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             if (d.contains("seek_where")) {
                 if (!d["seek_where"].is_object()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -848,7 +818,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                     // Check if column exists.
                     if (table->columns.count(column_n) == 0) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
+                        send_query_error(socket_data, nonce, query_error::params_invalid);
                         return;
                     }
 
@@ -865,14 +835,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                                 (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
                                 (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
                             ) {
-                                send_query_error(socket_data, nonce, errors::params_invalid);
+                                send_query_error(socket_data, nonce, query_error::params_invalid);
                                 return;
                             }
                         } else if (column.type == types::string) {
                             if (
                                 (column_d.contains("contains") && !column_d["contains"].is_string())
                             ) {
-                                send_query_error(socket_data, nonce, errors::params_invalid);
+                                send_query_error(socket_data, nonce, query_error::params_invalid);
                                 return;
                             }
                         }
@@ -883,7 +853,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                         column.type == types::float32 && !column_d.is_number() ||
                         column.type == types::long64 && !column_d.is_number()
                     ) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
+                        send_query_error(socket_data, nonce, query_error::params_invalid);
                         return;
                     }
                 }
@@ -895,7 +865,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 // Check if column exists.
                 if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -912,14 +882,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                             (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
                             (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     } else if (column.type == types::string) {
                         if (
                             (column_d.contains("contains") && !column_d["contains"].is_string())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     }
@@ -930,7 +900,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     column.type == types::float32 && !column_d.is_number() ||
                     column.type == types::long64 && !column_d.is_number()
                 ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -946,12 +916,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::erase_all_records: {
             if (!table_permissions->ERASE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
             if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
@@ -959,7 +929,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             if (d.contains("limit")) {
                 if(!d["limit"].is_number_unsigned()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -974,7 +944,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 // Check if column exists.
                 if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -991,14 +961,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                             (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
                             (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     } else if (column.type == types::string) {
                         if (
                             (column_d.contains("contains") && !column_d["contains"].is_string())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     }
@@ -1009,7 +979,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     column.type == types::float32 && !column_d.is_number() ||
                     column.type == types::long64 && !column_d.is_number()
                 ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -1027,17 +997,17 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::update_all_records: {
             if (!table_permissions->UPDATE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
             if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
             if (!d.contains("changes") || !d["changes"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
@@ -1045,7 +1015,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             if (d.contains("limit")) {
                 if(!d["limit"].is_number_unsigned()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -1060,7 +1030,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 // Check if column exists.
                 if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -1077,14 +1047,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                             (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
                             (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     } else if (column.type == types::string) {
                         if (
                             (column_d.contains("contains") && !column_d["contains"].is_string())
                         ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
+                            send_query_error(socket_data, nonce, query_error::params_invalid);
                             return;
                         }
                     }
@@ -1096,7 +1066,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     column.type == types::long64 && !column_d.is_number()
                 ) {
                     log("dome");
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -1111,7 +1081,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 // Check if column exists.
                 if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -1126,7 +1096,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     column.type == types::float32 && !column_d.is_number() ||
                     column.type == types::long64 && !column_d.is_number()
                 ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
             }
@@ -1140,7 +1110,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
         case query_ops::rebuild_table: {
             if (!table_permissions->WRITE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
