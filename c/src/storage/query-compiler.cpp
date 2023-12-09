@@ -152,7 +152,7 @@ namespace query_compiler {
     }
 
 
-    CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+    CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::object& query_object) {
         // TODO - use existing buffer?
         std::unique_ptr<CompiledFindQuery> compiled_query(new CompiledFindQuery);
         
@@ -213,7 +213,7 @@ namespace query_compiler {
         return compiled_query.release();
     }
 
-    CompiledInsertQuery* compile_insert_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+    CompiledInsertQuery* compile_insert_query(ActiveTable* table, simdjson::ondemand::object& query_object) {
         std::unique_ptr<CompiledInsertQuery> compiled_query(new CompiledInsertQuery);
 
         // Allocate columns.length size of buffer since all columns are required at the moment for inserts.
@@ -222,7 +222,7 @@ namespace query_compiler {
 
         // Iterate over the columns specified.
         size_t columns_iterated = 0;
-        for (auto column_data : query_object.get_object()) {
+        for (auto column_data : query_object) {
             std::string_view column_name = column_data.unescaped_key();
             auto value = column_data.value();
 
@@ -281,7 +281,7 @@ namespace query_compiler {
         return compiled_query.release();
     }
 
-    CompiledEraseQuery* compile_erase_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+    CompiledEraseQuery* compile_erase_query(ActiveTable* table, simdjson::ondemand::object& query_object) {
         std::unique_ptr<CompiledEraseQuery> compiled_query(new CompiledEraseQuery);
         
         simdjson::ondemand::object conditions_object = query_object["where"];
@@ -312,7 +312,7 @@ namespace query_compiler {
         return compiled_query.release();
     }
 
-    CompiledUpdateQuery* compile_update_query(ActiveTable* table, simdjson::ondemand::document& query_object) {
+    CompiledUpdateQuery* compile_update_query(ActiveTable* table, simdjson::ondemand::object& query_object) {
         std::unique_ptr<CompiledUpdateQuery> compiled_query(new CompiledUpdateQuery);
         
         simdjson::ondemand::object conditions_object = query_object["where"];

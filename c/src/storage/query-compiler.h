@@ -161,8 +161,8 @@ namespace query_compiler {
 
     // Functions.
 
-    CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::document& query_object);
-    CompiledInsertQuery* compile_insert_query(ActiveTable* table, simdjson::ondemand::document& query_object);
-    CompiledEraseQuery* compile_erase_query(ActiveTable* table, simdjson::ondemand::document& query_object);
-    CompiledUpdateQuery* compile_update_query(ActiveTable* table, simdjson::ondemand::document& query_object);
+    CompiledFindQuery* compile_find_query(ActiveTable* table, simdjson::ondemand::object& query_object);
+    CompiledInsertQuery* compile_insert_query(ActiveTable* table, simdjson::ondemand::object& query_object);
+    CompiledEraseQuery* compile_erase_query(ActiveTable* table, simdjson::ondemand::object& query_object);
+    CompiledUpdateQuery* compile_update_query(ActiveTable* table, simdjson::ondemand::object& query_object);
 };
