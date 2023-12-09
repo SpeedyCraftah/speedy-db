@@ -22,21 +22,6 @@ namespace query_compiler {
         "Your query does not contain all of the table columns which is required for this query."
     };
 
-    class exception : public std::exception {
-        public:
-            exception(query_compiler::error errorCode) : errorCode_(errorCode) {};
-            query_compiler::error error() const {
-                return errorCode_;
-            }
-
-            virtual const char* what() const noexcept override {
-                return error_text[errorCode_];
-            }
-
-        private:
-            query_compiler::error errorCode_;
-    };
-
     // Reusable functions.
     uint32_t parse_conditions(ActiveTable* table, GenericQueryComparison conditions[], simdjson::ondemand::object& conditions_object) {
         // Iterate over the conditional queries and count queries.

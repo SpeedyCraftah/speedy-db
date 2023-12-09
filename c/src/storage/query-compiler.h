@@ -22,6 +22,21 @@ namespace query_compiler {
 
     extern const rapidjson::GenericStringRef<char> error_text[];
 
+    class exception : public std::exception {
+        public:
+            exception(query_compiler::error errorCode) : errorCode_(errorCode) {};
+            query_compiler::error error() const {
+                return errorCode_;
+            }
+
+            virtual const char* what() const noexcept override {
+                return error_text[errorCode_];
+            }
+
+        private:
+            query_compiler::error errorCode_;
+    };
+
     enum where_compare_op : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
