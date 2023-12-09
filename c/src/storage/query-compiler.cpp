@@ -11,11 +11,26 @@ using simdjson::fallback::number_type;
 #define MAX_VARIABLE_OPERATION_COUNT 20
 
 namespace query_compiler {
+    const rapidjson::GenericStringRef<char> error_text[] = {
+        "A column that has been specified does not exist.",
+        "A column that has been specified for results filtering does not exist.",
+        "Your query has too many compare operations, reduce the amount of WHERE conditions and try again.",
+        "Your query has too many update operations, reduce the amount of CHANGES and try again.",
+        "The advanced condition specified does not exist or appear to be supported.",
+        "The option specified for a setting does not fit the acceptable parameters.",
+        "Your query contains duplicates of the same column which is not allowed for this query.",
+        "Your query does not contain all of the table columns which is required for this query."
+    };
+
     class exception : public std::exception {
         public:
             exception(query_compiler::error errorCode) : errorCode_(errorCode) {};
             query_compiler::error error() const {
                 return errorCode_;
+            }
+
+            virtual const char* what() const noexcept override {
+                return error_text[errorCode_];
             }
 
         private:
@@ -172,7 +187,7 @@ namespace query_compiler {
         // Check for seek direction.
         // TODO - change query setting to boolean.
         // TODO - check before checking for direction, performance penalty on invalid elements.
-        int seek_direction;
+        intmax_t seek_direction;
         if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
             if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
             compiled_query->seek_direction = seek_direction == 1;
@@ -300,7 +315,7 @@ namespace query_compiler {
         // Check for seek direction.
         // TODO - change query setting to boolean.
         // TODO - check before checking for direction, performance penalty on invalid elements.
-        int seek_direction;
+        intmax_t seek_direction;
         if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
             if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
             compiled_query->seek_direction = seek_direction == 1;
@@ -391,6 +406,8 @@ namespace query_compiler {
             updates_count++;
         }
 
+        compiled_query->changes_count = updates_count;
+
         // Check for query return limits.
         // TODO - check before checking for limit, performance penalty on invalid elements.
         if (query_object["limit"].get(compiled_query->limit) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
@@ -398,7 +415,7 @@ namespace query_compiler {
         // Check for seek direction.
         // TODO - change query setting to boolean.
         // TODO - check before checking for direction, performance penalty on invalid elements.
-        int seek_direction;
+        intmax_t seek_direction;
         if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
             if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
             compiled_query->seek_direction = seek_direction == 1;

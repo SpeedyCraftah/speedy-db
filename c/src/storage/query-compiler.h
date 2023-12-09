@@ -5,6 +5,7 @@
 #include <string_view>
 #include <sys/types.h>
 #include "../deps/simdjson/simdjson.h"
+#include "../deps/rapidjson/document.h"
 #include "table.h"
 
 namespace query_compiler {
@@ -18,6 +19,8 @@ namespace query_compiler {
         DUPLICATE_COLUMNS,
         UNSPECIFIED_COLUMNS
     };
+
+    extern const rapidjson::GenericStringRef<char> error_text[];
 
     enum where_compare_op : uint8_t {
         STRING_EQUAL,
