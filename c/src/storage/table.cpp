@@ -10,12 +10,7 @@
 // TODO - add mutex
 // TODO - preallocate record header for each handle instead of mallocing and freeing on every query
 
-// Open table needs a separate mutex due to deadlocks.
-std::mutex open_table_mutex;
-
 ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_internal(is_internal) {
-    open_table_mutex.lock();
-
     // Create the data paths.
     std::string path = std::string("./data/").append(table_name);
     std::string meta_path = path + "/meta.bin";
@@ -102,8 +97,6 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     // Close handles which are not needed.
     fclose(header_handle);
     fclose(permissions_handle);
-
-    open_table_mutex.unlock();
 }
 
 ActiveTable::~ActiveTable() {

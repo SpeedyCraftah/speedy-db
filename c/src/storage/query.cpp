@@ -88,6 +88,8 @@ void send_query_error(client_socket_data* socket_data, int nonce, query_compiler
 // TODO - convert all to this
 #define query_error(error) send_query_error(socket_data, nonce, error)
 
+std::mutex table_open_mutex;
+
 // TODO - remove op-o conversion in js
 void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
     int socket_id = socket_data->socket_id;
@@ -137,20 +139,26 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
+            table_open_mutex.lock();
+
             // Check if table is already open.
             if (open_tables->contains(name)) {
+                table_open_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::table_already_open);
                 return;
             }
 
             // Check if table exists.
             if (!table_exists(name.c_str())) {
+                table_open_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::table_not_found);
                 return;
             }
 
             // Open the table.
             new ActiveTable(name.c_str(), false);
+
+            table_open_mutex.unlock();
 
             log("Table %s has been loaded into memory", name.c_str());
 
@@ -637,9 +645,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            
+            // Compile the query.
+            query_compiler::CompiledInsertQuery* query = query_compiler::compile_insert_query(table, d);
 
-            table->insert_record(d["columns"]);
             send_query_response(socket_data, nonce);
             return;
         }
