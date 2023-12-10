@@ -63,6 +63,9 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
 
     this->record_size += this->record_data_size;
 
+    // Create record buffer.
+    this->header_buffer = (record_header*)malloc(this->record_size);
+
     // Load the account permissions if table is not internal as internal tables do not have custom permissions.
     if (!this->is_internal) {
         // Create permission map instance.
@@ -113,6 +116,9 @@ ActiveTable::~ActiveTable() {
 
     // Free columns.
     free(this->header_columns);
+
+    // Free record header.
+    free(this->header_buffer);
 
     // TODO - see if this is a bad idea
     // Remove table from map.

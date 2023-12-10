@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include "../deps/json.hpp"
 #include "../permissions/permissions.h"
+#include "../deps/simdjson/simdjson.h"
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
@@ -65,6 +66,8 @@ class ActiveTable {
         ActiveTable(const char* table_name, bool is_internal);
         ~ActiveTable();
 
+        void insert_record(simdjson::ondemand::object& data);
+
         friend table_rebuild_statistics rebuild_table(ActiveTable** table);
 
     private:
@@ -78,6 +81,10 @@ class ActiveTable {
         uint32_t record_size = 0;
         
         bool is_internal;
+
+        // Create record buffer so operations don't need to constantly allocate the same buffer.
+        // Needs refactoring with concurrent operations.
+        record_header* header_buffer;
 
     public:
         // TODO - make private in the future somehow.
