@@ -32,7 +32,7 @@ namespace query_compiler {
 
             auto column_find = table->columns.find(key);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-            table_column& column = column_find->second;
+            table_column* column = column_find->second;
             
             // Determine the condition type.
             auto type = value.type().value();
@@ -43,7 +43,7 @@ namespace query_compiler {
                 simdjson::ondemand::object cmp_object = value.get_object();
 
                 // String key compare operations are expensive, only check for possible combinations.
-                if (column.type == types::string) {
+                if (column->type == types::string) {
                     for (auto advanced_condition : cmp_object) {
                         std::string_view advanced_key = advanced_condition.unescaped_key();
                         auto advanced_value = advanced_condition.value();
@@ -60,7 +60,7 @@ namespace query_compiler {
 
                             StringQueryComparison* cmp = reinterpret_cast<StringQueryComparison*>(&conditions[conditions_count]);
                             cmp->op = where_compare_op::STRING_CONTAINS;
-                            cmp->column_index = column.index;
+                            cmp->column_index = column->index;
                             cmp->comparator = comparator;
                             cmp->comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
                         } else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
@@ -77,7 +77,7 @@ namespace query_compiler {
                         size_t buffer = 0;
 
                         NumericQueryComparison* cmp = reinterpret_cast<NumericQueryComparison*>(&conditions[conditions_count]);
-                        cmp->column_index = column.index;
+                        cmp->column_index = column->index;
                         
                         // Compiler checks lengths when comparing strings, no further optimisation needed.
                         if (advanced_key == "less_than") cmp->op = where_compare_op::NUMERIC_LESS_THAN;
@@ -86,7 +86,7 @@ namespace query_compiler {
                         else if (advanced_key == "greater_than_equal_to") cmp->op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
                         else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
-                        switch (column.type) {
+                        switch (column->type) {
                             case types::integer: *((int*)&buffer) = (int)advanced_value.get_int64(); break;
                             case types::float32: *((float*)&buffer) = (float)advanced_value.get_double(); break;
                             default: buffer = advanced_value.get_uint64(); break;
@@ -102,7 +102,7 @@ namespace query_compiler {
             
             // Direct comparison.
             else {
-                switch (column.type) {
+                switch (column->type) {
                     case types::string: {
                         StringQueryComparison* cmp = reinterpret_cast<StringQueryComparison*>(&conditions[conditions_count]);
 
@@ -116,7 +116,7 @@ namespace query_compiler {
                         comparator.remove_suffix(1);
 
                         cmp->op = where_compare_op::STRING_EQUAL;
-                        cmp->column_index = column.index;
+                        cmp->column_index = column->index;
                         cmp->comparator = comparator;
                         cmp->comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
 
@@ -136,7 +136,7 @@ namespace query_compiler {
 
                         NumericQueryComparison* cmp = reinterpret_cast<NumericQueryComparison*>(&conditions[conditions_count]);
                         cmp->op = where_compare_op::NUMERIC_EQUAL;
-                        cmp->column_index = column.index;
+                        cmp->column_index = column->index;
                         cmp->comparator = buffer;
 
                         break;
@@ -186,10 +186,10 @@ namespace query_compiler {
             for (std::string_view column_name : return_columns) {
                 auto column_find = table->columns.find(column_name);
                 if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-                table_column& f_column = column_find->second;
+                table_column* f_column = column_find->second;
 
                 // Set the bit for the column.
-                filtered_columns |= (1 << f_column.index);
+                filtered_columns |= (1 << f_column->index);
             }
 
             compiled_query->columns_returned = filtered_columns;
@@ -228,17 +228,17 @@ namespace query_compiler {
 
             auto column_find = table->columns.find(column_name);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-            table_column& column = column_find->second;
+            table_column* column = column_find->second;
 
             // Check if column has already been iterated.
-            size_t column_bit = (1 << column.index);
+            size_t column_bit = (1 << column->index);
             if ((columns_iterated & column_bit) != 0) throw query_compiler::exception(error::DUPLICATE_COLUMNS);
 
             // Set bit to indicate it has been iterated.
             columns_iterated |= column_bit;
 
             // Set the column values.
-            switch (column.type) {
+            switch (column->type) {
                 case types::string: {
                     if (value.type() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
@@ -246,7 +246,7 @@ namespace query_compiler {
                     data.remove_prefix(1);
                     data.remove_suffix(1);
 
-                    StringInsertColumn* val = reinterpret_cast<StringInsertColumn*>(&columns_inserted[column.index]);
+                    StringInsertColumn* val = reinterpret_cast<StringInsertColumn*>(&columns_inserted[column->index]);
                     val->data = data;
 
                     break;
@@ -256,13 +256,13 @@ namespace query_compiler {
                     size_t buffer = 0;
                     
                     // Set data depending on type.
-                    switch (column.type) {
+                    switch (column->type) {
                         case types::float32: *((float*)&buffer) = (float)value.get_double(); break;
                         case types::integer: *((int*)&buffer) = (int)value.get_int64(); break;
                         default: buffer = value.get_uint64(); break;
                     }
 
-                    NumericInsertColumn* val = reinterpret_cast<NumericInsertColumn*>(&columns_inserted[column.index]);
+                    NumericInsertColumn* val = reinterpret_cast<NumericInsertColumn*>(&columns_inserted[column->index]);
                     val->data = buffer;
 
                     break;
@@ -340,10 +340,10 @@ namespace query_compiler {
 
             auto column_find = table->columns.find(column_name);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-            table_column& column = column_find->second;
+            table_column* column = column_find->second;
 
             // Check if column has already been iterated.
-            size_t column_bit = (1 << column.index);
+            size_t column_bit = (1 << column->index);
             if ((columns_iterated & column_bit) != 0) throw query_compiler::exception(error::DUPLICATE_COLUMNS);
 
             // Set bit to indicate it has been iterated.
@@ -352,7 +352,7 @@ namespace query_compiler {
             // Needed for future advanced expressions.
             json_type value_type = value.type();
 
-            switch (column.type) {
+            switch (column->type) {
                 case types::string: {
                     if (value_type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
@@ -362,7 +362,7 @@ namespace query_compiler {
 
                     StringUpdateSet* update = reinterpret_cast<StringUpdateSet*>(&updates[updates_count]);
                     update->op = update_changes_op::STRING_SET;
-                    update->column_index = column.index;
+                    update->column_index = column->index;
                     update->new_value = data;
                     update->new_value_hash = XXH64(data.data(), data.length(), HASH_SEED);
 
@@ -373,7 +373,7 @@ namespace query_compiler {
                     size_t buffer = 0;
                     
                     // Set data depending on type.
-                    switch (column.type) {
+                    switch (column->type) {
                         case types::float32: *((float*)&buffer) = (float)value.get_double(); break;
                         case types::integer: *((int*)&buffer) = (int)value.get_int64(); break;
                         default: buffer = value.get_uint64(); break;
@@ -381,7 +381,7 @@ namespace query_compiler {
 
                     NumericUpdateSet* update = reinterpret_cast<NumericUpdateSet*>(&updates[updates_count]);
                     update->op = update_changes_op::NUMERIC_SET;
-                    update->column_index = column.index;
+                    update->column_index = column->index;
                     update->new_value = buffer;
 
                     break;
