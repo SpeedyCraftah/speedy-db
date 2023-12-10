@@ -60,23 +60,10 @@ struct hashed_entry {
     size_t record_location;
 } __attribute__((packed));
 
-struct StringViewCompare {
-  bool operator()(const std::string_view& lhs, const std::string& rhs) const {
-    return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
-  }
-};
-
 class ActiveTable {
     public:
         ActiveTable(const char* table_name, bool is_internal);
         ~ActiveTable();
-
-        nlohmann::json find_one_record(nlohmann::json& data, int dynamic_count, int seek_direction, bool limited_results);
-        nlohmann::json find_all_records(nlohmann::json& data, int dynamic_count, int limit, int seek_direction, bool limited_results);
-
-        int erase_all_records(nlohmann::json& data, int dynamic_count, int limit);
-        int update_all_records(nlohmann::json& data, int dynamic_count, int limit);
-        void insert_record(nlohmann::json& data);
 
         friend table_rebuild_statistics rebuild_table(ActiveTable** table);
 
@@ -91,14 +78,6 @@ class ActiveTable {
         uint32_t record_size = 0;
         
         bool is_internal;
-
-        void compute_dynamic_hashes(size_t* output, nlohmann::json& data);
-        int calculate_offset(int index);
-        bool validate_record_conditions(record_header* r_header, size_t* dynamic_hashes, nlohmann::json& conditions);
-        void output_numeric_value(nlohmann::json& output, table_column& column, uint8_t* data_area);
-        void output_dynamic_value(nlohmann::json& output, table_column& column, uint8_t* data_area);
-        void assemble_record_data(record_header* r_header, nlohmann::json& output, nlohmann::json& query, bool limited_results);
-        long find_record_location(nlohmann::json& data, int dynamic_count, int seek_direction);
 
     public:
         // TODO - make private in the future somehow.
