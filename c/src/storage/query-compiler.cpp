@@ -248,6 +248,7 @@ namespace query_compiler {
 
                     StringInsertColumn* val = reinterpret_cast<StringInsertColumn*>(&columns_inserted[column->index]);
                     val->data = data;
+                    val->data_hash = XXH64(data.data(), data.length(), HASH_SEED);
 
                     break;
                 }

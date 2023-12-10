@@ -71,17 +71,18 @@ namespace query_compiler {
 
 
     struct GenericInsertColumn {
-        char _padding[16];
+        char _padding[24];
     };
 
     struct NumericInsertColumn {
         size_t data;
 
-        char _padding[8];
+        char _padding[16];
     };
 
     struct StringInsertColumn {
         std::string_view data;
+        size_t data_hash;
     };
 
 
