@@ -6,6 +6,7 @@
 #include "../deps/json.hpp"
 #include "../permissions/permissions.h"
 #include "../deps/simdjson/simdjson.h"
+#include "compiled-query.h"
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
@@ -66,7 +67,7 @@ class ActiveTable {
         ActiveTable(const char* table_name, bool is_internal);
         ~ActiveTable();
 
-        void insert_record(simdjson::ondemand::object& data);
+        void insert_record(query_compiler::CompiledInsertQuery* query);
 
         friend table_rebuild_statistics rebuild_table(ActiveTable** table);
 
