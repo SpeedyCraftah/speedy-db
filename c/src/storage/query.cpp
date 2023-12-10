@@ -630,8 +630,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
+            table_open_mutex.lock();
+
             // Close the table.
             delete (*open_tables)[name];
+
+            table_open_mutex.unlock();
 
             log("Table %s has been unloaded from memory", name.c_str());
 
