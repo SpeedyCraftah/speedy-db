@@ -25,6 +25,7 @@ struct table_column {
     types type;
     uint32_t size;
     uint32_t index;
+    uint32_t buffer_offset;
 };
 
 struct table_header {
@@ -89,7 +90,7 @@ class ActiveTable {
 
     public:
         // TODO - make private in the future somehow.
-        std::map<std::string, table_column, std::less<>> columns;
+        std::map<std::string, table_column*, std::less<>> columns;
         std::unordered_map<size_t, TablePermissions>* permissions = nullptr;
         table_header header;
         table_column* header_columns;
