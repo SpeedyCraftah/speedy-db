@@ -29,11 +29,11 @@ struct client_socket_data {
     };
 
     struct key_strings_t {
-        rapidjson::GenericStringRef<char> nonce = "nonce";
-        rapidjson::GenericStringRef<char> data = "data";
-        rapidjson::GenericStringRef<char> error = "error";
-        rapidjson::GenericStringRef<char> error_code = "code";
-        rapidjson::GenericStringRef<char> error_text = "text";
+        std::string_view nonce = "nonce";
+        std::string_view data = "data";
+        std::string_view error = "error";
+        std::string_view error_code = "code";
+        std::string_view error_text = "text";
 
         std::string_view sj_data = "data";
     };
@@ -96,4 +96,4 @@ extern const rapidjson::GenericStringRef<char> query_error_text[];
 void* client_connection_handle(void* arg);
 int send_ka(client_socket_data* socket_data);
 void send_res(client_socket_data* socket_data, const char* data, uint32_t length);
-void send_json(client_socket_data* socket_data, const rapidjson::Document& data);
+void send_json(client_socket_data* socket_data, rapidjson::Document& data);

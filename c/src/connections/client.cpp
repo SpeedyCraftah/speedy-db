@@ -151,7 +151,7 @@ bool process_message(const char* buffer, uint32_t data_size, client_socket_data*
     simdjson::ondemand::document data = socket_data->parser.iterate(buffer, data_size, data_size + simdjson::SIMDJSON_PADDING);
 
     // Attempt to extract query nonce.
-    uint query_nonce;
+    size_t query_nonce;
     if (data[short_attr ? "n" : "nonce"].get(query_nonce) != 0) {
         rapidjson::Document data_object;
         data_object.SetObject();
@@ -389,11 +389,11 @@ void* client_connection_handle(void* arg) {
                 short_attr = short_attributes_setting;
 
                 // Set the key strings.
-                socket_data->key_strings.data = rapidjson::GenericStringRef<char>(short_attributes_setting ? "d" : "data");
-                socket_data->key_strings.nonce = rapidjson::GenericStringRef<char>(short_attributes_setting ? "n" : "nonce");
-                socket_data->key_strings.error = rapidjson::GenericStringRef<char>(short_attributes_setting ? "e" : "error");
-                socket_data->key_strings.error_code = rapidjson::GenericStringRef<char>(short_attributes_setting ? "c" : "code");
-                socket_data->key_strings.error_text = rapidjson::GenericStringRef<char>(short_attributes_setting ? "t" : "text");
+                socket_data->key_strings.data = short_attributes_setting ? "d" : "data";
+                socket_data->key_strings.nonce = short_attributes_setting ? "n" : "nonce";
+                socket_data->key_strings.error = short_attributes_setting ? "e" : "error";
+                socket_data->key_strings.error_code = short_attributes_setting ? "c" : "code";
+                socket_data->key_strings.error_text = short_attributes_setting ? "t" : "text";
                 socket_data->key_strings.sj_data = short_attributes_setting ? "d" : "data";
             }
 
