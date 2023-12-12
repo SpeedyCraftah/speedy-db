@@ -100,13 +100,18 @@ int main(int argc, char** args) {
                     server_config::root_password = (char*)malloc(21);
                     server_config::root_password[20] = 0;
 
-                    // Generate random bytes for the password.
-                    RAND_bytes((unsigned char*)server_config::root_password, 20);
+                    // Generate random password only for production build (optimised) to make debugging easier.
+                    #ifdef __OPTIMIZE__
+                        // Generate random bytes for the password.
+                        RAND_bytes((unsigned char*)server_config::root_password, 20);
 
-                    // Convert the bytes to ASCII codes from 0-Z.
-                    for (int i = 0; i < 20; i++) {
-                        server_config::root_password[i] = 48 + ((unsigned char)server_config::root_password[i] % 42);
-                    }
+                        // Convert the bytes to ASCII codes from 0-Z.
+                        for (int i = 0; i < 20; i++) {
+                            server_config::root_password[i] = 48 + ((unsigned char)server_config::root_password[i] % 42);
+                        }
+                    #else
+                        memcpy(server_config::root_password, "#DEBUG_ROOT_PASSWORD", 20);
+                    #endif
 
                     log("The session password for the root account is \033[47m%s\033[0m with the username being 'root'", server_config::root_password);
                 } else {
