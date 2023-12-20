@@ -189,6 +189,8 @@ bool process_message(const char* buffer, uint32_t data_size, client_socket_data*
             case simdjson::error_code::MEMALLOC:
                 send_query_error(socket_data, query_nonce, query_error::insufficient_memory);
                 break;
+            case simdjson::error_code::NO_SUCH_FIELD:
+                send_query_error(socket_data, query_nonce, query_error::params_invalid);
             default:
                 send_query_error(socket_data, query_nonce, query_error::json_invalid);
                 break;
