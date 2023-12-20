@@ -15,6 +15,7 @@
 #include <iostream>
 #include "../main.h"
 #include "../misc/valid_string.h"
+#include "compiled-query.h"
 #include "query-compiler.h"
 #include "table.h"
 #include <dirent.h>
@@ -42,8 +43,8 @@ types type_string_to_int(std::string_view& type) {
 void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
-    response_object.AddMember(socket_data->key_strings.data, data, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -51,21 +52,22 @@ void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::
 void send_query_response(client_socket_data* socket_data, int nonce) {
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
 
 void send_query_error(client_socket_data* socket_data, int nonce, query_error error) {
     rapidjson::Document data_object;
-    data_object.AddMember(socket_data->key_strings.error_code, error, data_object.GetAllocator());
-    if (socket_data->config.error_text) data_object.AddMember(socket_data->key_strings.error_text, query_error_text[error], data_object.GetAllocator());
+    data_object.SetObject();
+    data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_code), error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_text), query_error_text[error], data_object.GetAllocator());
 
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
-    response_object.AddMember(socket_data->key_strings.data, data_object, response_object.GetAllocator());
-    response_object.AddMember(socket_data->key_strings.error, 1, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data_object, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.error), 1, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -73,14 +75,15 @@ void send_query_error(client_socket_data* socket_data, int nonce, query_error er
 // TODO - query and query compiler errors are the same, remove error code in response with next update.
 void send_query_error(client_socket_data* socket_data, int nonce, query_compiler::error error) {
     rapidjson::Document data_object;
-    data_object.AddMember(socket_data->key_strings.error_code, error, data_object.GetAllocator());
-    if (socket_data->config.error_text) data_object.AddMember(socket_data->key_strings.error_text, query_compiler::error_text[error], data_object.GetAllocator());
+    data_object.SetObject();
+    data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_code), error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_text), query_compiler::error_text[error], data_object.GetAllocator());
 
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(socket_data->key_strings.nonce, nonce, response_object.GetAllocator());
-    response_object.AddMember(socket_data->key_strings.data, data_object, response_object.GetAllocator());
-    response_object.AddMember(socket_data->key_strings.error, 1, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data_object, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.error), 1, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -97,7 +100,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
     bool error_text = socket_data->config.error_text;
     DatabaseAccount* account = socket_data->account;
 
-    uint op;
+    size_t op;
     simdjson::ondemand::object d;
 
     if (data["op"].get(op) != simdjson::error_code::SUCCESS) {
@@ -126,11 +129,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             }
 
             // TODO - try not to use string
-            std::string name;
-            if (d["table"].get(name) != simdjson::error_code::SUCCESS) {
+            std::string_view name_sv;
+            if (d["table"].get(name_sv) != simdjson::error_code::SUCCESS) {
                 send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
+            std::string name = {name_sv.begin(), name_sv.end()};
 
             // If name starts with a reserved sequence.
             // TODO - check for vulnerabilities.
@@ -156,7 +160,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             }
 
             // Open the table.
-            new ActiveTable(name.c_str(), false);
+            (*open_tables)[name] = new ActiveTable(name.c_str(), false);
 
             table_open_mutex.unlock();
 
@@ -169,12 +173,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         case query_ops::create_table: {
             if (!account->permissions.CREATE_TABLES) return query_error(query_error::insufficient_privileges);
 
-            std::string name;
+            std::string_view name_sv;
             simdjson::ondemand::object columns_object;
             if (
-                d["name"].get(name) != simdjson::error_code::SUCCESS || 
+                d["name"].get(name_sv) != simdjson::error_code::SUCCESS || 
                 d["columns"].get(columns_object) != simdjson::error_code::SUCCESS
             ) return query_error(query_error::params_invalid);
+
+            std::string name = {name_sv.begin(), name_sv.end()};
 
             if (columns_object.is_empty()) {
                 send_query_error(socket_data, nonce, query_error::params_invalid);
@@ -247,6 +253,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 // Copy name.
                 strcpy(new_column.name, key.c_str());
+                new_column.name_length = key.length();
 
                 columns[iteration] = new_column;
                 ++iteration;
@@ -448,7 +455,10 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (key == "WRITE") permissions.WRITE = value;
                 else if (key == "UPDATE") permissions.UPDATE = value;
                 else if (key == "ERASE") permissions.ERASE = value;
-                else query_error::params_invalid;
+                else {
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
+                    return;
+                }
             }
 
             // Apply the table permissions to the account.
@@ -535,7 +545,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     if (name.find("--internal-") == 0) continue;
 
                     // Push table name to the array.
-                    tables.PushBack(name, tables.GetAllocator());
+                    tables.PushBack(rapidjson_string_view(name), tables.GetAllocator());
                 }
             }
 
@@ -555,7 +565,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Iterate over accounts map.
             for (auto& element : *database_accounts) {
                 // Push the accout name to the array.
-                accounts.PushBack(element.first, accounts.GetAllocator());
+                accounts.PushBack(rapidjson_string_view(element.first), accounts.GetAllocator());
             }
 
             // Send the response.
@@ -582,8 +592,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     ActiveTable* table = (*open_tables)[name];
 
+    // If user is querying internal table.
+    if (table->is_internal) {
+        send_query_error(socket_data, nonce, query_error::name_reserved);
+        return;
+    }
+
     // Get the permissions available for the user in the table.
-    const TablePermissions* table_permissions = get_table_permissions_for_account(table, account);
+    const TablePermissions* table_permissions = new TablePermissions({true, true, true, true, true});//get_table_permissions_for_account(table, account);
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {
@@ -593,9 +609,11 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     switch (op) {
         case query_ops::fetch_table_meta: {
+            std::string_view table_name = table->header.name;
+
             rapidjson::Document json;
             json.SetObject();
-            json.AddMember("name", std::string_view(table->header.name), json.GetAllocator());
+            json.AddMember("name", rapidjson_string_view(table_name), json.GetAllocator());
             json.AddMember("column_count", table->header.num_columns, json.GetAllocator());
 
             rapidjson::Document columns;
@@ -605,17 +623,16 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             for (int i = 0; i < table->header.num_columns; i++) {
                 table_column& column = table->header_columns[i];
                 std::string_view column_name = column.name;
+                std::string_view column_type_name = type_int_to_string(column.type);
 
                 rapidjson::Document column_object;
                 column_object.SetObject();
-                column_object.AddMember("name", column_name, column_object.GetAllocator());
-                column_object.AddMember("size", column.size, column_object.GetAllocator());
-                column_object.AddMember("type", type_int_to_string(column.type), column_object.GetAllocator());
-                column_object.AddMember("physical_index", column.index, column_object.GetAllocator());
+                column_object.AddMember("name", rapidjson_string_view(column_name), columns.GetAllocator());
+                column_object.AddMember("size", column.size, columns.GetAllocator());
+                column_object.AddMember("type", rapidjson_string_view(column_type_name), columns.GetAllocator());
+                column_object.AddMember("physical_index", column.index, columns.GetAllocator());
 
-                rapidjson::Value name;
-                name.SetString(column_name.data(), column_name.length());
-                columns.AddMember(name, column_object, columns.GetAllocator());
+                columns.AddMember(rapidjson_string_view(column_name), column_object, columns.GetAllocator());
             }
 
             json.AddMember("columns", columns, json.GetAllocator());
@@ -634,6 +651,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // Close the table.
             delete (*open_tables)[name];
+            open_tables->erase(name);
 
             table_open_mutex.unlock();
 
@@ -649,10 +667,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            // Compile the query.
-            query_compiler::CompiledInsertQuery* query = query_compiler::compile_insert_query(table, d);
+            simdjson::ondemand::object columns = d["columns"];
+            query_compiler::CompiledInsertQuery* query = query_compiler::compile_insert_query(table, columns);
 
+            table->insert_record(query);
+            
             send_query_response(socket_data, nonce);
+
+            query->destroy();
             return;
         }
 
@@ -662,108 +684,15 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, query_error::params_invalid);
-                return;
-            }
+            query_compiler::CompiledFindQuery* query = query_compiler::compile_find_query(table, d);
 
-            // Which direction to read data in (end-start / start-end).
-            int seek_direction = 1;
+            rapidjson::Document result;
+            bool found = table->find_one_record(query, result);
+            if (!found) result.SetNull();
 
-            // Allow user to specify a custom seek direction (default is start-end).
-            if (d.contains("seek_direction")) {
-                if (!d["seek_direction"].is_number_integer()) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                if (d["seek_direction"] != -1 && d["seek_direction"] != 1) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                seek_direction = d["seek_direction"];
-            }
-
-            bool limited_results = false;
-
-            // Allow user to specify which columns they want returned in the query.
-            if (d.contains("return")) {
-                limited_results = true;
-
-                if (!d["return"].is_array()) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                // Check values in the array.
-                for (auto& column : d["return"]) {
-                    if (!column.is_string()) {
-                        send_query_error(socket_data, nonce, query_error::params_invalid);
-                        return;
-                    }
-
-                    // Check if column exists.
-                    if (table->columns.count(column) == 0) {
-                        send_query_error(socket_data, nonce, query_error::params_invalid);
-                        return;
-                    }
-                }
-            }
-
-            int dynamic_count = 0;
-
-            // Verify data.
-            for (auto& item : d["where"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                if (column_d.is_object()) {
-                    // Check if column is a number.
-                    if (column.type <= types::byte) {
-                        if (
-                            (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                            (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                            (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                            (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                        ) {
-                            send_query_error(socket_data, nonce, query_error::params_invalid);
-                            return;
-                        }
-                    } else if (column.type == types::string) {
-                        if (
-                            (column_d.contains("contains") && !column_d["contains"].is_string())
-                        ) {
-                            send_query_error(socket_data, nonce, query_error::params_invalid);
-                            return;
-                        }
-                    }
-                } else if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && !column_d.is_number() ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                } 
-
-                if (column.type == types::string) {
-                    ++dynamic_count;
-                }
-            }
-
-            nlohmann::json result = table->find_one_record(d, dynamic_count, seek_direction, limited_results);
             send_query_response(socket_data, nonce, result);
+
+            query->destroy();
             return;
         }
 
@@ -1160,6 +1089,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             send_query_response(socket_data, nonce, data);
             return;
-        }
+        }*/
     }
 }
