@@ -92,6 +92,12 @@ namespace query_compiler {
     // TODO - set column amount limit to (sizeof(size_t) * 8)
 
     struct CompiledFindQuery {
+        void destroy() {
+            if (conditions_count != 0) delete conditions;
+            if (seek_conditions_count != 0) delete seek_conditions;
+            delete this;
+        }
+
         GenericQueryComparison* conditions;
         uint32_t conditions_count = 0;
 
@@ -104,6 +110,12 @@ namespace query_compiler {
     };
 
     struct CompiledUpdateQuery {
+        void destroy() {
+            if (conditions_count != 0) delete conditions;
+            if (changes_count != 0) delete changes;
+            delete this;
+        }
+
         GenericQueryComparison* conditions;
         uint32_t conditions_count = 0;
 
@@ -115,6 +127,11 @@ namespace query_compiler {
     };
 
     struct CompiledEraseQuery {
+        void destroy() {
+            if (conditions_count != 0) delete conditions;
+            delete this;
+        }
+
         GenericQueryComparison* conditions;
         uint32_t conditions_count = 0;
 
@@ -124,6 +141,11 @@ namespace query_compiler {
 
     // Values must be the count of table columns and be in the indexed order.
     struct CompiledInsertQuery {
+        void destroy() {
+            if (values != nullptr) delete values;
+            delete this;
+        }
+
         GenericInsertColumn* values;
     };
 }
