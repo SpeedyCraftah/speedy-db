@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include "misc/files.h"
 #include "storage/table.h"
+#include <csignal>
 
 // Global variable holding the socket ID.
 int server_socket_id;
@@ -42,6 +43,14 @@ char* server_config::root_password = nullptr;
 void on_terminate() {
     log("Killing socket and exiting");
     close(server_socket_id);
+
+    // Close all file handles and finalise table operations.
+    fclose(database_accounts_handle);
+    for (auto t : *open_tables) {
+        delete t.second;
+    }
+
+    exit(0);
 }
 
 int main(int argc, char** args) {
@@ -147,6 +156,8 @@ int main(int argc, char** args) {
 
     // Register exit handler.
     std::atexit(on_terminate);
+    std::signal(SIGINT, [](int signum) { exit(0); });
+    std::signal(SIGTERM, [](int signum) { exit(0); });
 
     // Create structures.
     socket_connections = new std::unordered_map<int, client_socket_data*>();
@@ -172,7 +183,7 @@ int main(int argc, char** args) {
     }
 
     // Open the internal permissions table.
-    new ActiveTable("--internal-table-permissions", true);
+    (*open_tables)["--internal-table-permissions"] = new ActiveTable("--internal-table-permissions", true);
 
     // Load the database accounts into memory.
     // Open the file containing the database accounts.
