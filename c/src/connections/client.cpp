@@ -69,6 +69,7 @@ int send_ka(client_socket_data* socket_data) {
 }
 
 // May be improved to reduce send calls.
+// TODO - group packets and send avoiding malloc and memcpy
 void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_length) {
     uint8_t* buffer;
     uint32_t length;
@@ -122,6 +123,14 @@ inline void send_json(client_socket_data* socket_data, rapidjson::Document& data
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     data.Accept(writer);
     send_res(socket_data, sb.GetString(), sb.GetSize());
+}
+
+// Version of above for handshake stage.
+inline void send_json_handshake(client_socket_data* socket_data, rapidjson::Document& data) {
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    data.Accept(writer);
+    send(socket_data->socket_id, sb.GetString(), sb.GetSize(), 0);
 }
 
 // Make list of potential names.
@@ -225,7 +234,7 @@ void* client_connection_handle(void* arg) {
         object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
         object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-        send_json(socket_data, object);
+        send_json_handshake(socket_data, object);
 
         goto break_socket;
     }
@@ -260,7 +269,7 @@ void* client_connection_handle(void* arg) {
             object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
             object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-            send_json(socket_data, object);
+            send_json_handshake(socket_data, object);
 
             goto break_socket;
         } else if (version_major < server_config::version::major) {
@@ -276,7 +285,7 @@ void* client_connection_handle(void* arg) {
             object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
             object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-            send_json(socket_data, object);
+            send_json_handshake(socket_data, object);
             
             goto break_socket;
         }
@@ -303,7 +312,7 @@ void* client_connection_handle(void* arg) {
             object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
             object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-            send_json(socket_data, object);
+            send_json_handshake(socket_data, object);
             
             goto break_socket;
         }
@@ -325,7 +334,7 @@ void* client_connection_handle(void* arg) {
             object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
             object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-            send_json(socket_data, object);
+            send_json_handshake(socket_data, object);
             
             goto break_socket;
         }
@@ -376,7 +385,7 @@ void* client_connection_handle(void* arg) {
             object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
             object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-            send_json(socket_data, object);
+            send_json_handshake(socket_data, object);
             
             goto break_socket;
         }
@@ -416,7 +425,7 @@ void* client_connection_handle(void* arg) {
         version_server_object.AddMember("minor", server_config::version::minor, version_server_object.GetAllocator());
         handshake_object.AddMember("version", version_server_object, handshake_object.GetAllocator());
 
-        send_json(socket_data, handshake_object);
+        send_json_handshake(socket_data, handshake_object);
 
         // If cipher is enabled, wait for a follow up message.
         if (socket_data->encryption.enabled) {
@@ -459,7 +468,7 @@ void* client_connection_handle(void* arg) {
             rapidjson::Document res_object;
             res_object.SetObject();
 
-            send_json(socket_data, res_object);
+            send_json_handshake(socket_data, res_object);
         }
     } catch(std::exception& e) {
         logerr("Socket with handle %d has been terminated due to an invalid handshake", socket_id);
@@ -475,7 +484,7 @@ void* client_connection_handle(void* arg) {
         object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
         object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
 
-        send_json(socket_data, object);
+        send_json_handshake(socket_data, object);
 
         goto break_socket;
     }
