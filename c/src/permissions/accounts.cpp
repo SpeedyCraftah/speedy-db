@@ -63,7 +63,7 @@ void delete_database_account(DatabaseAccount* account) {
             { "index", account->internal_index }
         } }
     };
-    (*open_tables)["--internal-table-permissions"]->erase_all_records(query, 0, 0);
+    //(*open_tables)["--internal-table-permissions"]->erase_all_records(query, 0, 0);
 
     // Free the account from memory.
     free(account);
@@ -96,7 +96,7 @@ void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account,
                 { "permissions", *(uint8_t*)&permissions }
             } }
         };
-        (*open_tables)["--internal-table-permissions"]->update_all_records(query, 1, 1);
+        //(*open_tables)["--internal-table-permissions"]->update_all_records(query, 1, 1);
     } else {
         // Create the new permission entry.
         nlohmann::json query = {
@@ -104,7 +104,7 @@ void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account,
             { "table", table->header.name },
             { "permissions", *(uint8_t*)&permissions }
         };
-        (*open_tables)["--internal-table-permissions"]->insert_record(query);
+        //(*open_tables)["--internal-table-permissions"]->insert_record(query);
     }
 
     // Set the new permissions.
@@ -118,7 +118,7 @@ void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* accou
             { "index", account->internal_index }
         } }
     };
-    (*open_tables)["--internal-table-permissions"]->erase_all_records(query, 1, 1);
+    //(*open_tables)["--internal-table-permissions"]->erase_all_records(query, 1, 1);
 }
 
 // Placeholder struct for all permissions.
