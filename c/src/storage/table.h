@@ -6,10 +6,14 @@
 #include "../deps/json.hpp"
 #include "../permissions/permissions.h"
 #include "../deps/simdjson/simdjson.h"
+#include "../deps/rapidjson/document.h"
 #include "compiled-query.h"
+#include "../logging/logger.h"
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
+
+#define BULK_HEADER_READ_COUNT 10
 
 // Table structs.
 enum types: uint32_t {
@@ -22,6 +26,7 @@ enum types: uint32_t {
 
 struct table_column {
     char name[33] = {0};
+    uint8_t name_length;
     types type;
     uint32_t size;
     uint32_t index;
@@ -63,14 +68,20 @@ struct hashed_entry {
     size_t record_location;
 } __attribute__((packed));
 
+#define rapidjson_string_view(str) rapidjson::GenericStringRef<char>(str.data(), str.size())
+
 class ActiveTable {
     public:
         ActiveTable(const char* table_name, bool is_internal);
         ~ActiveTable();
 
+        bool find_one_record(query_compiler::CompiledFindQuery* query, rapidjson::Document& result);
+
         void insert_record(query_compiler::CompiledInsertQuery* query);
 
-        friend table_rebuild_statistics rebuild_table(ActiveTable** table);
+        //friend table_rebuild_statistics rebuild_table(ActiveTable** table);
+
+        bool is_internal;
 
     private:
         FILE* data_handle;
@@ -81,12 +92,60 @@ class ActiveTable {
         uint32_t hashed_column_count = 0;
         uint32_t record_data_size = 0;
         uint32_t record_size = 0;
-        
-        bool is_internal;
 
         // Create record buffer so operations don't need to constantly allocate the same buffer.
         // Needs refactoring with concurrent operations.
         record_header* header_buffer;
+
+        bool verify_record_conditions_match(record_header* record, query_compiler::GenericQueryComparison* conditions, uint32_t conditions_length);
+        void assemble_record_data_to_json(record_header* record, size_t included_columns, rapidjson::Document& output);
+
+        // Iterator for scanning the tables.
+        // Performance when compiled with Ofast is comparable to a normal loop.
+
+        // TODO - add bidirectional seek
+        class data_iterator {
+            ActiveTable* table;
+            bool complete = false;
+            size_t buffer_index = BULK_HEADER_READ_COUNT;
+            size_t buffer_records_available = BULK_HEADER_READ_COUNT;
+
+            public:
+                inline data_iterator(ActiveTable* tbl) : table(tbl) {}
+                #ifndef __OPTIMIZE__
+                ~data_iterator() { if (table != nullptr) table->is_iterator_running = false; }
+                #endif
+
+                // Load the next record.
+                data_iterator operator++();
+
+                inline record_header& operator*() { return table->header_buffer[buffer_index]; };
+                inline bool operator!=(const data_iterator& _unused) { return !this->complete; }
+        };
+
+        #ifndef __OPTIMIZE__
+        bool is_iterator_running = false;
+        #endif
+
+        inline data_iterator begin() {
+            #ifndef __OPTIMIZE__
+                if (is_iterator_running) {
+                    logerr("[RUNTIME DEBUG] table '%s' iterator begin() called while another iterator is already running", this->header.name);
+                    exit(1);
+                }
+                is_iterator_running = true;
+            #endif
+
+            fseek(this->data_handle, 0, SEEK_SET);
+            data_iterator i = data_iterator(this);
+            i.operator++();
+            
+            return i;
+        }
+
+        inline data_iterator end() {
+            return data_iterator(nullptr);
+        }
 
     public:
         // TODO - make private in the future somehow.
@@ -99,6 +158,6 @@ class ActiveTable {
 // External table functions.
 bool table_exists(const char* name);
 void create_table(const char* table_name, table_column* columns, int length);
-table_rebuild_statistics rebuild_table(ActiveTable** table);
+//table_rebuild_statistics rebuild_table(ActiveTable** table);
 
 extern std::unordered_map<std::string, ActiveTable*>* open_tables;
