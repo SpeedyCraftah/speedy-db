@@ -193,7 +193,6 @@ void ActiveTable::find_many_records(query_compiler::CompiledFindQuery* query, ra
     this->op_mutex.lock();
     result.SetArray();
 
-    size_t count = 0;
     for (record_header* r_header : *this) {
         // If the block is empty, skip to the next one.
         if ((r_header->flags & record_flags::active) == 0) continue;
@@ -204,6 +203,7 @@ void ActiveTable::find_many_records(query_compiler::CompiledFindQuery* query, ra
             assemble_record_data_to_json(r_header, query->columns_returned, record);
 
             result.PushBack(record, result.GetAllocator());
+            if (query->limit != 0 && result.Size() == query->limit) break;
         }
     }
 

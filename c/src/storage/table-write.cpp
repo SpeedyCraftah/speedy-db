@@ -1,6 +1,7 @@
 #include "compiled-query.h"
 #include "table.h"
 #include <cstdio>
+#include <unistd.h>
 
 void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
     this->op_mutex.lock();
@@ -67,4 +68,162 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
     fwrite_unlocked(r_header, 1, this->record_size, this->data_handle);
 
     this->op_mutex.unlock();
+}
+
+size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query) {
+    this->op_mutex.lock();
+
+    // Manual iteration of records is done due to efficiency reasons and nature of operations.
+    fseek(this->data_handle, 0, SEEK_SET);
+
+    size_t bytes_start_offset = 0;
+    size_t count = 0;
+    size_t read_records;
+
+    do {
+        bool changes_made = false;
+        read_records = fread_unlocked(this->header_buffer, this->record_size, BULK_HEADER_READ_COUNT, this->data_handle);
+
+        for (size_t i = 0; i < read_records; i++) {
+            record_header* r_header = reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
+            
+            // If the block is empty, skip to the next one.
+            if ((r_header->flags & record_flags::active) == 0) {
+                continue;
+            }
+
+            // Check if record matches conditions.
+            if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
+                // Mark the record as deleted and mark for optimisation.
+                r_header->flags &= ~record_flags::active;
+                r_header->flags |= record_flags::available_optimisation;
+
+                count++;
+                changes_made = true;
+                if (query->limit != 0 && count == query->limit) break;
+            }
+        }
+
+        // Write the updated records in bulk with precise handle (if any).
+        if (changes_made) {
+            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, bytes_start_offset);
+        }
+
+        // Keep track of the start of bulk read since ftell requires a syscall (and syscalls are slow).
+        bytes_start_offset += this->record_size * read_records;
+    } while (read_records == BULK_HEADER_READ_COUNT);
+
+    this->op_mutex.unlock();
+    return count;
+}
+
+size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* query) {
+    this->op_mutex.lock();
+
+    // Manual iteration of records is done due to efficiency reasons and nature of operations.
+    fseek(this->data_handle, 0, SEEK_SET);
+
+    size_t bytes_start_offset = 0;
+    size_t count = 0;
+    size_t read_records;
+
+    do {
+        bool changes_made = false;
+        read_records = fread_unlocked(this->header_buffer, this->record_size, BULK_HEADER_READ_COUNT, this->data_handle);
+
+        for (size_t i = 0; i < read_records; i++) {
+            record_header* r_header = reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
+            
+            // If the block is empty, skip to the next one.
+            if ((r_header->flags & record_flags::active) == 0) {
+                continue;
+            }
+
+            // Check if record matches conditions.
+            if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
+                for (uint32_t i = 0; i < query->changes_count; i++) {
+                    query_compiler::GenericUpdate& generic_update = query->changes[i];
+                    table_column& column = this->header_columns[generic_update.column_index];
+                    uint8_t* record_data = r_header->data + column.buffer_offset;
+
+                    switch (generic_update.op) {
+                        case query_compiler::update_changes_op::NUMERIC_SET: {
+                            query_compiler::NumericUpdateSet* update = reinterpret_cast<query_compiler::NumericUpdateSet*>(&query->changes[i]);
+                            
+                            switch (column.type) {
+                                case types::byte: *record_data = *(uint8_t*)&update->new_value; break;
+                                case types::float32: *(float*)record_data = *(float*)&update->new_value; break;
+                                case types::integer: *(int*)record_data = *(int*)&update->new_value; break;
+                                case types::long64: *(long*)record_data = *(long*)&update->new_value; break;
+                                default: {};
+                            }
+
+                            break;
+                        }
+
+                        case query_compiler::update_changes_op::STRING_SET: {
+                            query_compiler::StringUpdateSet* update = reinterpret_cast<query_compiler::StringUpdateSet*>(&query->changes[i]);
+                            hashed_entry* entry = (hashed_entry*)record_data;
+                            
+                            // Update the parameters.
+                            entry->hash = update->new_value_hash;
+                            entry->size = update->new_value.size();
+
+                            // Load the string header.
+                            dynamic_record column_header;
+
+                            // Read the string block header.
+                            pread(this->dynamic_handle_precise, &column_header, sizeof(dynamic_record), entry->record_location);
+
+                            // If new data can fit in current block.
+                            if (update->new_value.size() <= column_header.physical_size - sizeof(dynamic_record)) {
+                                // Write the new string.
+                                pwrite(this->dynamic_handle_precise, update->new_value.data(), update->new_value.size(), entry->record_location + sizeof(dynamic_record));
+                            } 
+                            
+                            // Needs relocation.
+                            else {
+                                // Cannot use pwrite since it cannot find end.
+                                // Seek to end.
+                                fseek(this->dynamic_handle, 0, SEEK_END);
+
+                                // Allocate space for new string block.
+                                dynamic_record* dynam_record = (dynamic_record*)malloc(sizeof(dynamic_record) + update->new_value.size());
+                                dynam_record->physical_size = sizeof(dynamic_record) + update->new_value.size();
+                                dynam_record->record_location = ftell(this->dynamic_handle);
+
+                                // Copy over string.
+                                memcpy(dynam_record->data, update->new_value.data(), update->new_value.size());
+
+                                // Write the new data.
+                                fwrite_unlocked(dynam_record, 1, sizeof(dynamic_record) + update->new_value.size(), this->dynamic_handle);
+
+                                // Update the record data.
+                                entry->record_location = dynam_record->record_location;
+
+                                free(dynam_record);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                count++;
+                changes_made = true;
+                if (query->limit != 0 && count == query->limit) break;
+            }
+        }
+
+        // Write the updated records in bulk with precise handle (if any).
+        if (changes_made) {
+            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, bytes_start_offset);
+        }
+
+        // Keep track of the start of bulk read since ftell requires a syscall (and syscalls are slow).
+        bytes_start_offset += this->record_size * read_records;
+    } while (read_records == BULK_HEADER_READ_COUNT);
+
+    this->op_mutex.unlock();
+    return count;
 }
