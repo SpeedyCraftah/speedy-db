@@ -702,176 +702,18 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, query_error::params_invalid);
-                return;
-            }
+            query_compiler::CompiledFindQuery* query = query_compiler::compile_find_query(table, d);
 
-            // Which direction to read data in (end-start / start-end).
-            int seek_direction = 1;
+            rapidjson::Document result;
+            table->find_many_records(query, result);
 
-            // Allow user to specify a custom seek direction (default is start-end).
-            if (d.contains("seek_direction")) {
-                if (!d["seek_direction"].is_number_integer()) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                if (d["seek_direction"] != -1 && d["seek_direction"] != 1) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                seek_direction = d["seek_direction"];
-            }
-
-            int limit = 0;
-
-            if (d.contains("limit")) {
-                if(!d["limit"].is_number_unsigned()) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                limit = d["limit"];
-            }
-
-            bool limited_results = false;
-
-            // Allow user to specify which columns they want returned in the query.
-            if (d.contains("return")) {
-                limited_results = true;
-
-                if (!d["return"].is_array()) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                // Check values in the array.
-                for (auto& column : d["return"]) {
-                    if (!column.is_string()) {
-                        send_query_error(socket_data, nonce, query_error::params_invalid);
-                        return;
-                    }
-
-                    // Check if column exists.
-                    if (table->columns.count(column) == 0) {
-                        send_query_error(socket_data, nonce, query_error::params_invalid);
-                        return;
-                    }
-                }
-            }
-
-            int dynamic_count = 0;
-
-            if (d.contains("seek_where")) {
-                if (!d["seek_where"].is_object()) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                for (auto& item : d["seek_where"].items()) {
-                    auto column_n = item.key();
-
-                    // Check if column exists.
-                    if (table->columns.count(column_n) == 0) {
-                        send_query_error(socket_data, nonce, query_error::params_invalid);
-                        return;
-                    }
-
-                    auto column_d = item.value();
-                    table_column& column = table->columns[column_n];
-
-                    // Validate type.
-                    if (column_d.is_object()) {
-                        // Check if column is a number.
-                        if (column.type <= types::byte) {
-                            if (
-                                (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                                (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                                (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                                (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                            ) {
-                                send_query_error(socket_data, nonce, query_error::params_invalid);
-                                return;
-                            }
-                        } else if (column.type == types::string) {
-                            if (
-                                (column_d.contains("contains") && !column_d["contains"].is_string())
-                            ) {
-                                send_query_error(socket_data, nonce, query_error::params_invalid);
-                                return;
-                            }
-                        }
-                    } else if (
-                        column.type == types::integer && !column_d.is_number_integer() ||
-                        column.type == types::byte && !column_d.is_number_integer() ||
-                        column.type == types::string && !column_d.is_string() ||
-                        column.type == types::float32 && !column_d.is_number() ||
-                        column.type == types::long64 && !column_d.is_number()
-                    ) {
-                        send_query_error(socket_data, nonce, query_error::params_invalid);
-                        return;
-                    }
-                }
-            }
-
-            // Verify data.
-            for (auto& item : d["where"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                // Validate type.
-                if (column_d.is_object()) {
-                    // Check if column is a number.
-                    if (column.type <= types::byte) {
-                        if (
-                            (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                            (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                            (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                            (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                        ) {
-                            send_query_error(socket_data, nonce, query_error::params_invalid);
-                            return;
-                        }
-                    } else if (column.type == types::string) {
-                        if (
-                            (column_d.contains("contains") && !column_d["contains"].is_string())
-                        ) {
-                            send_query_error(socket_data, nonce, query_error::params_invalid);
-                            return;
-                        }
-                    }
-                } else if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && !column_d.is_number() ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
-                }
-
-                if (column.type == types::string) {
-                    ++dynamic_count;
-                }
-            }
-
-            nlohmann::json result = table->find_all_records(d, dynamic_count, limit, seek_direction, limited_results);
             send_query_response(socket_data, nonce, result);
+
+            query->destroy();
             return;
         }
 
-        case query_ops::erase_all_records: {
+        /*case query_ops::erase_all_records: {
             if (!table_permissions->ERASE) {
                 send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
