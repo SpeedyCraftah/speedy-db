@@ -54,7 +54,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         else {
             query_compiler::NumericInsertColumn* column_data = reinterpret_cast<query_compiler::NumericInsertColumn*>(&query->values[i]);
             switch (column.type) {
-                case types::byte: *(int8_t*)data_area = *(int8_t*)column_data->data; break;
+                case types::byte: *(int8_t*)data_area = *(int8_t*)&column_data->data; break;
                 case types::long64: *(long*)data_area = *(long*)&column_data->data; break;
                 
                 // Rest are 4 byte long values.
