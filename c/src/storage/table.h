@@ -76,6 +76,7 @@ class ActiveTable {
         ~ActiveTable();
 
         bool find_one_record(query_compiler::CompiledFindQuery* query, rapidjson::Document& result);
+        void find_many_records(query_compiler::CompiledFindQuery* query, rapidjson::Document& result);
 
         void insert_record(query_compiler::CompiledInsertQuery* query);
 
@@ -119,7 +120,7 @@ class ActiveTable {
                 // Load the next record.
                 data_iterator operator++();
 
-                inline record_header& operator*() { return table->header_buffer[buffer_index]; };
+                inline record_header* operator*() { return reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(table->header_buffer) + (buffer_index * table->record_size)); };
                 inline bool operator!=(const data_iterator& _unused) { return !this->complete; }
         };
 
