@@ -1,5 +1,6 @@
 #include "table.h"
 #include <cstddef>
+#include <cstdio>
 #include <openssl/types.h>
 #include <unordered_map>
 #include "../deps/xxh/xxhash.h"
@@ -26,9 +27,11 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     fseek(permissions_handle, 0, SEEK_SET);
 
     this->data_handle = fopen(data_path.c_str(), "r+b");
+    this->data_handle_precise = fileno(this->data_handle);
     fseek(data_handle, 0, SEEK_SET);
 
     this->dynamic_handle = fopen(dynamic_path.c_str(), "r+b");
+    this->dynamic_handle_precise = fileno(this->dynamic_handle);
     fseek(dynamic_handle, 0, SEEK_SET);
 
     // Read the header.
@@ -112,7 +115,7 @@ ActiveTable::data_iterator ActiveTable::data_iterator::operator++() {
 
     if (buffer_index >= buffer_records_available) {
         buffer_index = 0;
-        buffer_records_available = fread_unlocked(table->header_buffer, table->record_size, BULK_HEADER_READ_COUNT, table->data_handle);
+        buffer_records_available = request_bulk_records();
     }
 
     complete = (buffer_index >= buffer_records_available);
