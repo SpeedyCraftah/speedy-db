@@ -7,6 +7,7 @@
 #include "../logging/logger.h"
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 // TODO - add mutex
 // TODO - preallocate record header for each handle instead of mallocing and freeing on every query
@@ -30,9 +31,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     this->data_handle_precise = fileno(this->data_handle);
     fseek(data_handle, 0, SEEK_SET);
 
-    this->dynamic_handle = fopen(dynamic_path.c_str(), "r+b");
-    this->dynamic_handle_precise = fileno(this->dynamic_handle);
-    fseek(dynamic_handle, 0, SEEK_SET);
+    this->dynamic_handle = open(dynamic_path.c_str(), O_RDWR | O_CREAT);
 
     // Read the header.
     fread_unlocked(&this->header, 1, sizeof(table_header), header_handle);
@@ -98,7 +97,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
 ActiveTable::~ActiveTable() {
     // Close handles.
     fclose(this->data_handle);
-    fclose(this->dynamic_handle);
+    close(this->dynamic_handle);
 
     // Free permissions if needed.
     if (this->permissions != nullptr) delete this->permissions;

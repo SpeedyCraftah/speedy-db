@@ -30,8 +30,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
             entry->hash = column_data->data_hash;
 
             // Store dynamic data location.
-            fseek(this->dynamic_handle, 0, SEEK_END);
-            entry->record_location = ftell(this->dynamic_handle);
+            entry->record_location = lseek(this->dynamic_handle, 0, SEEK_END);
 
             // TODO - make this a preallocated buffer/stack instead depending on size?
             dynamic_record* dynam_record = (dynamic_record*)malloc(sizeof(dynamic_record) + data_length);
@@ -43,9 +42,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
             memcpy(dynam_record->data, column_data->data.data(), data_length);
 
             // Write the dynamic record.
-            fseek(this->dynamic_handle, 0, SEEK_END);
-            fwrite_unlocked(dynam_record, 1, sizeof(dynamic_record) + data_length, this->dynamic_handle);
-            fseek(this->dynamic_handle, 0, SEEK_SET);
+            write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + data_length);
 
             free(dynam_record);
         } 
@@ -126,14 +123,14 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
 
             // Check if record matches conditions.
             if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
-                for (uint32_t i = 0; i < query->changes_count; i++) {
-                    query_compiler::GenericUpdate& generic_update = query->changes[i];
+                for (uint32_t j = 0; j < query->changes_count; j++) {
+                    query_compiler::GenericUpdate& generic_update = query->changes[j];
                     table_column& column = this->header_columns[generic_update.column_index];
                     uint8_t* record_data = r_header->data + column.buffer_offset;
 
                     switch (generic_update.op) {
                         case query_compiler::update_changes_op::NUMERIC_SET: {
-                            query_compiler::NumericUpdateSet* update = reinterpret_cast<query_compiler::NumericUpdateSet*>(&query->changes[i]);
+                            query_compiler::NumericUpdateSet* update = reinterpret_cast<query_compiler::NumericUpdateSet*>(&query->changes[j]);
                             
                             switch (column.type) {
                                 case types::byte: *record_data = *(uint8_t*)&update->new_value; break;
@@ -147,7 +144,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                         }
 
                         case query_compiler::update_changes_op::STRING_SET: {
-                            query_compiler::StringUpdateSet* update = reinterpret_cast<query_compiler::StringUpdateSet*>(&query->changes[i]);
+                            query_compiler::StringUpdateSet* update = reinterpret_cast<query_compiler::StringUpdateSet*>(&query->changes[j]);
                             hashed_entry* entry = (hashed_entry*)record_data;
                             
                             // Update the parameters.
@@ -158,30 +155,26 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                             dynamic_record column_header;
 
                             // Read the string block header.
-                            pread(this->dynamic_handle_precise, &column_header, sizeof(dynamic_record), entry->record_location);
+                            pread(this->dynamic_handle, &column_header, sizeof(dynamic_record), entry->record_location);
 
                             // If new data can fit in current block.
                             if (update->new_value.size() <= column_header.physical_size - sizeof(dynamic_record)) {
                                 // Write the new string.
-                                pwrite(this->dynamic_handle_precise, update->new_value.data(), update->new_value.size(), entry->record_location + sizeof(dynamic_record));
+                                pwrite(this->dynamic_handle, update->new_value.data(), update->new_value.size(), entry->record_location + sizeof(dynamic_record));
                             } 
                             
                             // Needs relocation.
                             else {
-                                // Cannot use pwrite since it cannot find end.
-                                // Seek to end.
-                                fseek(this->dynamic_handle, 0, SEEK_END);
-
                                 // Allocate space for new string block.
                                 dynamic_record* dynam_record = (dynamic_record*)malloc(sizeof(dynamic_record) + update->new_value.size());
                                 dynam_record->physical_size = sizeof(dynamic_record) + update->new_value.size();
-                                dynam_record->record_location = ftell(this->dynamic_handle);
+                                dynam_record->record_location = lseek(this->dynamic_handle, 0, SEEK_END);
 
                                 // Copy over string.
                                 memcpy(dynam_record->data, update->new_value.data(), update->new_value.size());
 
                                 // Write the new data.
-                                fwrite_unlocked(dynam_record, 1, sizeof(dynamic_record) + update->new_value.size(), this->dynamic_handle);
+                                write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + update->new_value.size());
 
                                 // Update the record data.
                                 entry->record_location = dynam_record->record_location;

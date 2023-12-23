@@ -90,8 +90,7 @@ class ActiveTable {
         FILE* data_handle;
         int data_handle_precise;
 
-        FILE* dynamic_handle;
-        int dynamic_handle_precise;
+        int dynamic_handle;
 
         std::mutex op_mutex;
 
@@ -146,13 +145,17 @@ class ActiveTable {
 
                 inline bulk_data_iterator(ActiveTable* tbl) : table(tbl) {}
                 bulk_data_iterator operator++() {
+                    if (buffer_records_available != BULK_HEADER_READ_COUNT) {
+                        complete = true;
+                        return *this;
+                    }
+                    
                     buffer_records_available = fread_unlocked(table->header_buffer, table->record_size, BULK_HEADER_READ_COUNT, table->data_handle);
                     records_byte_offset += buffer_records_available * table->record_size;
                     return *this;
                 }
 
                 inline uint32_t operator*() {
-                    complete = buffer_records_available != BULK_HEADER_READ_COUNT;
                     return buffer_records_available;
                 }
                 inline bool operator!=(const bulk_data_iterator& _unused) { return !this->complete; }

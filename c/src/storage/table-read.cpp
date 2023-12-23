@@ -83,11 +83,8 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 // Allocate space for the dynamic data loading.
                 char* dynamic_data = (char*)malloc(entry->size);
                 
-                // Seek to the dynamic data.
-                fseek(this->dynamic_handle, entry->record_location + sizeof(dynamic_record), SEEK_SET);
-
                 // Read the dynamic data to the allocated space.
-                fread_unlocked(dynamic_data, 1, entry->size, this->dynamic_handle);
+                pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
 
                 // Compare the data character by character to 100% confirm they are a match.
                 // Safe to use memcmp since they are guaranteed to be same size.
@@ -110,11 +107,8 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 char* dynamic_data = (char*)malloc(entry->size);
                 std::string_view dynamic_data_sv = std::string_view(dynamic_data, entry->size);
                 
-                // Seek to the dynamic data.
-                fseek(this->dynamic_handle, entry->record_location + sizeof(dynamic_record), SEEK_SET);
-
                 // Read the dynamic data to the allocated space.
-                fread_unlocked(dynamic_data, 1, entry->size, this->dynamic_handle);
+                pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
 
                 // Check if the string contains the item.
                 size_t match_result = dynamic_data_sv.find(cmp->comparator);
@@ -145,15 +139,13 @@ void ActiveTable::assemble_record_data_to_json(record_header* record, size_t inc
             case types::string: {
                 hashed_entry* entry = (hashed_entry*)data;
                 
-                // Seek to the dynamic data.
-                fseek(this->dynamic_handle, entry->record_location + sizeof(dynamic_record), SEEK_SET);
                 char* buffer = (char*)output.GetAllocator().Malloc(entry->size);
                 std::string_view buffer_sv(buffer, entry->size);
 
                 // TODO - check for memory leak, if buffer gets deallocated when object does.
 
                 // Read the dynamic data.
-                fread_unlocked(buffer, 1, entry->size, this->dynamic_handle);
+                pread(this->dynamic_handle, buffer, entry->size, entry->record_location + sizeof(dynamic_record));
 
                 // Store the dynamic data and free the buffer.
                 output.AddMember(rapidjson_string_view(column_name), rapidjson_string_view(buffer_sv), output.GetAllocator());
