@@ -73,18 +73,12 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
 size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query) {
     this->op_mutex.lock();
 
-    // Manual iteration of records is done due to efficiency reasons and nature of operations.
-    fseek(this->data_handle, 0, SEEK_SET);
-
-    size_t bytes_start_offset = 0;
     size_t count = 0;
-    size_t read_records;
+    for (auto it = this->bulk_begin(), end = this->bulk_end(); it != end; ++it) {
+        uint32_t available = *it;
 
-    do {
         bool changes_made = false;
-        read_records = fread_unlocked(this->header_buffer, this->record_size, BULK_HEADER_READ_COUNT, this->data_handle);
-
-        for (size_t i = 0; i < read_records; i++) {
+        for (uint32_t i = 0; i < available; i++) {
             record_header* r_header = reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
             
             // If the block is empty, skip to the next one.
@@ -106,12 +100,9 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
 
         // Write the updated records in bulk with precise handle (if any).
         if (changes_made) {
-            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, bytes_start_offset);
+            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, it.bulk_byte_offset());
         }
-
-        // Keep track of the start of bulk read since ftell requires a syscall (and syscalls are slow).
-        bytes_start_offset += this->record_size * read_records;
-    } while (read_records == BULK_HEADER_READ_COUNT);
+    }
 
     this->op_mutex.unlock();
     return count;
@@ -120,18 +111,12 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
 size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* query) {
     this->op_mutex.lock();
 
-    // Manual iteration of records is done due to efficiency reasons and nature of operations.
-    fseek(this->data_handle, 0, SEEK_SET);
-
-    size_t bytes_start_offset = 0;
     size_t count = 0;
-    size_t read_records;
+    for (auto it = this->bulk_begin(), end = this->bulk_end(); it != end; ++it) {
+        uint32_t available = *it;
 
-    do {
         bool changes_made = false;
-        read_records = fread_unlocked(this->header_buffer, this->record_size, BULK_HEADER_READ_COUNT, this->data_handle);
-
-        for (size_t i = 0; i < read_records; i++) {
+        for (uint32_t i = 0; i < available; i++) {
             record_header* r_header = reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
             
             // If the block is empty, skip to the next one.
@@ -215,14 +200,10 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
             }
         }
 
-        // Write the updated records in bulk with precise handle (if any).
         if (changes_made) {
-            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, bytes_start_offset);
+            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, it.bulk_byte_offset());
         }
-
-        // Keep track of the start of bulk read since ftell requires a syscall (and syscalls are slow).
-        bytes_start_offset += this->record_size * read_records;
-    } while (read_records == BULK_HEADER_READ_COUNT);
+    }
 
     this->op_mutex.unlock();
     return count;

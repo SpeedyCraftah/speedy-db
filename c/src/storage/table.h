@@ -135,6 +135,31 @@ class ActiveTable {
                 inline bool operator!=(const data_iterator& _unused) { return !this->complete; }
         };
 
+        // Same as above but instead of iterating over individual records, only does by bulk.
+        // Useful for erase/update operations.
+        class bulk_data_iterator {
+            public:
+                ActiveTable* table;
+                bool complete = false;
+                size_t buffer_records_available = BULK_HEADER_READ_COUNT;
+                size_t records_byte_offset = 0;
+
+                inline bulk_data_iterator(ActiveTable* tbl) : table(tbl) {}
+                bulk_data_iterator operator++() {
+                    buffer_records_available = fread_unlocked(table->header_buffer, table->record_size, BULK_HEADER_READ_COUNT, table->data_handle);
+                    records_byte_offset += buffer_records_available * table->record_size;
+                    return *this;
+                }
+
+                inline uint32_t operator*() {
+                    complete = buffer_records_available != BULK_HEADER_READ_COUNT;
+                    return buffer_records_available;
+                }
+                inline bool operator!=(const bulk_data_iterator& _unused) { return !this->complete; }
+                inline size_t bulk_byte_offset() { return records_byte_offset; }
+
+        };
+
         #ifndef __OPTIMIZE__
         bool is_iterator_running = false;
         #endif
@@ -157,6 +182,18 @@ class ActiveTable {
 
         inline data_iterator end() {
             return data_iterator(nullptr);
+        }
+
+        inline bulk_data_iterator bulk_begin() {
+            fseek(this->data_handle, 0, SEEK_SET);
+            bulk_data_iterator i = bulk_data_iterator(this);
+            i.operator++();
+            i.records_byte_offset = 0;
+            return i;
+        }
+
+        inline bulk_data_iterator bulk_end() {
+            return bulk_data_iterator(nullptr);
         }
 
     public:
