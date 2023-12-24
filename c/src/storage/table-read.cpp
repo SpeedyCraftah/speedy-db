@@ -142,8 +142,6 @@ void ActiveTable::assemble_record_data_to_json(record_header* record, size_t inc
                 char* buffer = (char*)output.GetAllocator().Malloc(entry->size);
                 std::string_view buffer_sv(buffer, entry->size);
 
-                // TODO - check for memory leak, if buffer gets deallocated when object does.
-
                 // Read the dynamic data.
                 pread(this->dynamic_handle, buffer, entry->size, entry->record_location + sizeof(dynamic_record));
 
