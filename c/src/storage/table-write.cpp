@@ -101,6 +101,8 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
         }
     }
 
+    fflush(this->data_handle);
+
     this->op_mutex.unlock();
     return count;
 }
@@ -197,6 +199,8 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
             pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, it.bulk_byte_offset());
         }
     }
+
+    fflush(this->data_handle);
 
     this->op_mutex.unlock();
     return count;
