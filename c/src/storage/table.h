@@ -82,7 +82,7 @@ class ActiveTable {
         size_t erase_many_records(query_compiler::CompiledEraseQuery* query);
         size_t update_many_records(query_compiler::CompiledUpdateQuery* query);
 
-        //friend table_rebuild_statistics rebuild_table(ActiveTable** table);
+        friend table_rebuild_statistics rebuild_table(ActiveTable** table);
 
         bool is_internal;
 
@@ -210,6 +210,6 @@ class ActiveTable {
 // External table functions.
 bool table_exists(const char* name);
 void create_table(const char* table_name, table_column* columns, int length);
-//table_rebuild_statistics rebuild_table(ActiveTable** table);
+table_rebuild_statistics rebuild_table(ActiveTable** table);
 
 extern std::unordered_map<std::string, ActiveTable*>* open_tables;

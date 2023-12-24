@@ -749,7 +749,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        /*case query_ops::rebuild_table: {
+        case query_ops::rebuild_table: {
             if (!table_permissions->WRITE) {
                 send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
@@ -773,6 +773,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             send_query_response(socket_data, nonce, data);
             return;
-        }*/
+        }
     }
 }

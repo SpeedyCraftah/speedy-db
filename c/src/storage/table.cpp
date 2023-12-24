@@ -187,7 +187,7 @@ void create_table(const char* table_name, table_column* columns, int length) {
     misc_op_mutex.unlock();
 }
 
-/*table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
+table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
     ActiveTable* table = *table_var;
     bool is_internal = table->is_internal;
     record_header* header = (record_header*)malloc(table->record_size);
@@ -245,7 +245,7 @@ void create_table(const char* table_name, table_column* columns, int length) {
             table_column& column = table->header_columns[i];
 
             // Get the location of the column in the buffer.
-            uint8_t* base = header->data + table->calculate_offset(column.index);
+            uint8_t* base = header->data + column.buffer_offset;
 
             // If the column is dynamic.
             if (column.type == types::string) {
@@ -254,12 +254,9 @@ void create_table(const char* table_name, table_column* columns, int length) {
 
                 // Allocate space for the dynamic data loading.
                 dynamic_record* dynamic_data = (dynamic_record*)malloc(sizeof(dynamic_record) + entry->size + 1);
-                
-                // Seek to the dynamic data.
-                fseek(table->dynamic_handle, entry->record_location, SEEK_SET);
 
                 // Read the dynamic data to the allocated space.
-                fread_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size + 1, table->dynamic_handle);
+                pread(table->dynamic_handle, dynamic_data, sizeof(dynamic_record) + entry->size + 1, entry->record_location);
 
                 // Update short string statistic if short.
                 if (entry->size + 1 != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
@@ -311,4 +308,4 @@ void create_table(const char* table_name, table_column* columns, int length) {
     free(header);
 
     return stats;
-}*/
+}
