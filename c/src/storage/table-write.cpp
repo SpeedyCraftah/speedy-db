@@ -48,7 +48,6 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         } 
         
         // Column is numeric.
-        // TODO - test if memcpy is faster/slower than dereferencing and copying.
         else {
             query_compiler::NumericInsertColumn* column_data = reinterpret_cast<query_compiler::NumericInsertColumn*>(&query->values[i]);
             switch (column.type) {
