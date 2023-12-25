@@ -1,33 +1,34 @@
 #include "compiled-query.h"
+#include "table-reusable-types.h"
 #include "table.h"
 
-bool ActiveTable::verify_record_conditions_match(record_header* record, query_compiler::GenericQueryComparison* conditions, uint32_t conditions_length) {
+bool ActiveTable::verify_record_conditions_match(record_header* record, query_compiler::QueryComparison* conditions, uint32_t conditions_length) {
     // Go over all conditions for record.
     for (uint32_t i = 0; i < conditions_length; i++) {
-        query_compiler::GenericQueryComparison& generic_cmp = conditions[i];
-        table_column& column = this->header_columns[generic_cmp.column_index];
-        uint8_t* data = record->data + column.buffer_offset;
+        query_compiler::QueryComparison& generic_cmp = conditions[i];
+        table_column& column = this->header_columns[generic_cmp.generic.column_index];
+        NumericType* data = (NumericType*)(record->data + column.buffer_offset);
 
-        switch (generic_cmp.op) {
+        switch (generic_cmp.generic.op) {
             case query_compiler::where_compare_op::NUMERIC_EQUAL: {
-                query_compiler::NumericQueryComparison* cmp = reinterpret_cast<query_compiler::NumericQueryComparison*>(&conditions[i]);
+                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 
                 switch (column.type) {
-                    case types::byte: if (*(uint8_t*)&cmp->comparator != *data) return false; break;
-                    case types::long64: if (cmp->comparator != *((size_t*)data)) return false; break;
-                    default: if (*(uint32_t*)&cmp->comparator != *((uint32_t*)data)) return false; break;
+                    case types::byte: if (cmp.comparator.byte != data->byte) return false; break;
+                    case types::long64: if (cmp.comparator.long64 != data->long64) return false; break;
+                    default: if (cmp.comparator.unsigned_raw != data->unsigned_raw) return false; break;
                 }
 
                 break;
             }
 
             case query_compiler::where_compare_op::NUMERIC_GREATER_THAN: {
-                query_compiler::NumericQueryComparison* cmp = reinterpret_cast<query_compiler::NumericQueryComparison*>(&conditions[i]);
+                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (*(uint8_t*)&cmp->comparator >= *data) return false; break;
-                    case types::float32: if (*(float*)&cmp->comparator >= *(float*)data) return false; break;
-                    case types::long64: if (cmp->comparator >= *(size_t*)data) return false; break;
-                    case types::integer: if (*(int*)&cmp->comparator >= *(int*)data) return false; break;
+                    case types::byte: if (cmp.comparator.byte >= data->byte) return false; break;
+                    case types::float32: if (cmp.comparator.float32 >= data->float32) return false; break;
+                    case types::long64: if (cmp.comparator.long64 >= data->long64) return false; break;
+                    case types::integer: if (cmp.comparator.int32 >= data->int32) return false; break;
                     default: {};
                 }
 
@@ -35,12 +36,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO: {
-                query_compiler::NumericQueryComparison* cmp = reinterpret_cast<query_compiler::NumericQueryComparison*>(&conditions[i]);
+                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (*(uint8_t*)&cmp->comparator > *data) return false; break;
-                    case types::float32: if (*(float*)&cmp->comparator > *(float*)data) return false; break;
-                    case types::long64: if (cmp->comparator > *(size_t*)data) return false; break;
-                    case types::integer: if (*(int*)&cmp->comparator > *(int*)data) return false; break;
+                    case types::byte: if (cmp.comparator.byte > data->byte) return false; break;
+                    case types::float32: if (cmp.comparator.float32 > data->float32) return false; break;
+                    case types::long64: if (cmp.comparator.long64 > data->long64) return false; break;
+                    case types::integer: if (cmp.comparator.int32 > data->int32) return false; break;
                     default: {};
                 }
 
@@ -48,12 +49,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::NUMERIC_LESS_THAN: {
-                query_compiler::NumericQueryComparison* cmp = reinterpret_cast<query_compiler::NumericQueryComparison*>(&conditions[i]);
+                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (*(uint8_t*)&cmp->comparator <= *data) return false; break;
-                    case types::float32: if (*(float*)&cmp->comparator <= *(float*)data) return false; break;
-                    case types::long64: if (cmp->comparator <= *(size_t*)data) return false; break;
-                    case types::integer: if (*(int*)&cmp->comparator <= *(int*)data) return false; break;
+                    case types::byte: if (cmp.comparator.byte <= data->byte) return false; break;
+                    case types::float32: if (cmp.comparator.float32 <= data->float32) return false; break;
+                    case types::long64: if (cmp.comparator.long64 <= data->long64) return false; break;
+                    case types::integer: if (cmp.comparator.int32 <= data->int32) return false; break;
                     default: {};
                 }
 
@@ -61,12 +62,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO: {
-                query_compiler::NumericQueryComparison* cmp = reinterpret_cast<query_compiler::NumericQueryComparison*>(&conditions[i]);
+                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (*(uint8_t*)&cmp->comparator < *data) return false; break;
-                    case types::float32: if (*(float*)&cmp->comparator < *(float*)data) return false; break;
-                    case types::long64: if (cmp->comparator < *(size_t*)data) return false; break;
-                    case types::integer: if (*(int*)&cmp->comparator < *(int*)data) return false; break;
+                    case types::byte: if (cmp.comparator.byte < data->byte) return false; break;
+                    case types::float32: if (cmp.comparator.float32 < data->float32) return false; break;
+                    case types::long64: if (cmp.comparator.long64 < data->long64) return false; break;
+                    case types::integer: if (cmp.comparator.int32 < data->int32) return false; break;
                     default: {};
                 }
 
@@ -74,11 +75,11 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::STRING_EQUAL: {
-                query_compiler::StringQueryComparison* cmp = reinterpret_cast<query_compiler::StringQueryComparison*>(&conditions[i]);
+                query_compiler::StringQueryComparison& cmp = generic_cmp.string;
                 hashed_entry* entry = (hashed_entry*)data;
 
-                if (entry->hash != cmp->comparator_hash) return false;
-                if (entry->size != cmp->comparator.size()) return false;
+                if (entry->hash != cmp.comparator_hash) return false;
+                if (entry->size != cmp.comparator.size()) return false;
 
                 // Allocate space for the dynamic data loading.
                 char* dynamic_data = (char*)malloc(entry->size);
@@ -88,7 +89,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
 
                 // Compare the data character by character to 100% confirm they are a match.
                 // Safe to use memcmp since they are guaranteed to be same size.
-                int match_result = memcmp(dynamic_data, cmp->comparator.data(), entry->size);
+                int match_result = memcmp(dynamic_data, cmp.comparator.data(), entry->size);
 
                 // Free the allocated dynamic data as it is not needed anymore.
                 free(dynamic_data);
@@ -100,7 +101,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::STRING_CONTAINS: {
-                query_compiler::StringQueryComparison* cmp = reinterpret_cast<query_compiler::StringQueryComparison*>(&conditions[i]);
+                query_compiler::StringQueryComparison& cmp = generic_cmp.string;
                 hashed_entry* entry = (hashed_entry*)data;
 
                 // Allocate space for the dynamic data loading.
@@ -111,7 +112,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
 
                 // Check if the string contains the item.
-                size_t match_result = dynamic_data_sv.find(cmp->comparator);
+                size_t match_result = dynamic_data_sv.find(cmp.comparator);
 
                 // Free the allocated dynamic data as it is not needed anymore.
                 free(dynamic_data);
@@ -134,7 +135,7 @@ void ActiveTable::assemble_record_data_to_json(record_header* record, size_t inc
         table_column& column = this->header_columns[i];
         std::string_view column_name(column.name, column.name_length);
 
-        uint8_t* data = record->data + column.buffer_offset;
+        NumericType* data = (NumericType*)(record->data + column.buffer_offset);
         switch (column.type) {
             case types::string: {
                 hashed_entry* entry = (hashed_entry*)data;
@@ -151,10 +152,10 @@ void ActiveTable::assemble_record_data_to_json(record_header* record, size_t inc
                 break;
             }
 
-            case types::byte: output.AddMember(rapidjson_string_view(column_name), *data, output.GetAllocator()); break;
-            case types::float32: output.AddMember(rapidjson_string_view(column_name), *(float*)data, output.GetAllocator()); break;
-            case types::integer: output.AddMember(rapidjson_string_view(column_name), *(int*)data, output.GetAllocator()); break;
-            case types::long64: output.AddMember(rapidjson_string_view(column_name), *(size_t*)data, output.GetAllocator()); break;
+            case types::byte: output.AddMember(rapidjson_string_view(column_name), data->byte, output.GetAllocator()); break;
+            case types::float32: output.AddMember(rapidjson_string_view(column_name), data->float32, output.GetAllocator()); break;
+            case types::integer: output.AddMember(rapidjson_string_view(column_name), data->int32, output.GetAllocator()); break;
+            case types::long64: output.AddMember(rapidjson_string_view(column_name), data->long64, output.GetAllocator()); break;
         }
     }
 }

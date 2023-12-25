@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <string_view>
+#include "table-reusable-types.h"
 
 namespace query_compiler {
     enum where_compare_op : uint8_t {
@@ -22,43 +23,34 @@ namespace query_compiler {
     struct GenericQueryComparison {
         where_compare_op op;
         uint32_t column_index;
-
-        char _padding[24];
     };
 
-    struct StringQueryComparison {
-        where_compare_op op;
-        uint32_t column_index;
-
+    struct StringQueryComparison : GenericQueryComparison {
         std::string_view comparator;
         size_t comparator_hash;
     };
 
     // Used for signed/float comparisons as well, excluding LG/LT.
-    struct NumericQueryComparison {
-        where_compare_op op;
-        uint32_t column_index;
-
-        size_t comparator;
-        
-        char _padding[16];
+    struct NumericQueryComparison : GenericQueryComparison {
+        NumericType comparator;
     };
 
+    union QueryComparison {
+        GenericQueryComparison generic;
+        StringQueryComparison string{};
+        NumericQueryComparison numeric;
+    };
 
-    struct GenericUpdate {
+    struct GenericUpdateSet {
         update_changes_op op;
         uint32_t column_index;
-
-        char _padding[24];
     };
 
     struct NumericUpdateSet {
         update_changes_op op;
         uint32_t column_index;
 
-        size_t new_value;
-
-        char _padding[16];
+        NumericType new_value;
     };
 
     struct StringUpdateSet {
@@ -69,20 +61,25 @@ namespace query_compiler {
         size_t new_value_hash;
     };
 
-
-    struct GenericInsertColumn {
-        char _padding[24];
+    union UpdateSet {
+        GenericUpdateSet generic;
+        StringUpdateSet string{};
+        NumericUpdateSet numeric;
     };
 
-    struct NumericInsertColumn {
-        size_t data;
 
-        char _padding[16];
+    struct NumericInsertColumn {
+        NumericType data;
     };
 
     struct StringInsertColumn {
         std::string_view data;
         size_t data_hash;
+    };
+
+    union InsertColumn {
+        StringInsertColumn string{};
+        NumericInsertColumn numeric;
     };
 
 
@@ -98,10 +95,11 @@ namespace query_compiler {
             delete this;
         }
 
-        GenericQueryComparison* conditions;
+        //GenericQueryComparison* conditions;
+        QueryComparison* conditions;
         uint32_t conditions_count = 0;
 
-        GenericQueryComparison* seek_conditions;
+        QueryComparison* seek_conditions;
         uint32_t seek_conditions_count = 0;
 
         bool seek_direction = true; // false = end-start, true = start-end
@@ -116,10 +114,10 @@ namespace query_compiler {
             delete this;
         }
 
-        GenericQueryComparison* conditions;
+        QueryComparison* conditions;
         uint32_t conditions_count = 0;
 
-        GenericUpdate* changes;
+        UpdateSet* changes;
         uint32_t changes_count = 0;
 
         bool seek_direction = true; // false = end-start, true = start-end
@@ -132,7 +130,7 @@ namespace query_compiler {
             delete this;
         }
 
-        GenericQueryComparison* conditions;
+        QueryComparison* conditions;
         uint32_t conditions_count = 0;
 
         bool seek_direction = true; // false = end-start, true = start-end
@@ -146,6 +144,6 @@ namespace query_compiler {
             delete this;
         }
 
-        GenericInsertColumn* values;
+        InsertColumn* values;
     };
 }

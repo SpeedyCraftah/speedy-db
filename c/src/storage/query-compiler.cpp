@@ -23,7 +23,7 @@ namespace query_compiler {
     };
 
     // Reusable functions.
-    uint32_t parse_conditions(ActiveTable* table, GenericQueryComparison conditions[], simdjson::ondemand::object& conditions_object) {
+    uint32_t parse_conditions(ActiveTable* table, QueryComparison conditions[], simdjson::ondemand::object& conditions_object) {
         // Iterate over the conditional queries and count queries.
         uint32_t conditions_count = 0;
         for (auto condition : conditions_object) {
@@ -45,6 +45,7 @@ namespace query_compiler {
                 // String key compare operations are expensive, only check for possible combinations.
                 if (column->type == types::string) {
                     for (auto advanced_condition : cmp_object) {
+                        StringQueryComparison& cmp = conditions[conditions_count].string;
                         std::string_view advanced_key = advanced_condition.unescaped_key();
                         auto advanced_value = advanced_condition.value();
 
@@ -58,41 +59,37 @@ namespace query_compiler {
                             comparator.remove_prefix(1);
                             comparator.remove_suffix(1);
 
-                            StringQueryComparison* cmp = reinterpret_cast<StringQueryComparison*>(&conditions[conditions_count]);
-                            cmp->op = where_compare_op::STRING_CONTAINS;
-                            cmp->column_index = column->index;
-                            cmp->comparator = comparator;
-                            cmp->comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
+                            cmp.op = where_compare_op::STRING_CONTAINS;
+                            cmp.column_index = column->index;
+                            cmp.comparator = comparator;
+                            cmp.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
                         } else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         conditions_count++;
                         if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
                     }
                 } else {
+                    NumericQueryComparison& cmp = conditions[conditions_count].numeric;
+
                     // TODO - shorten LT/LG ops to >/< for efficiency ?
                     for (auto advanced_condition : cmp_object) {
                         std::string_view advanced_key = advanced_condition.unescaped_key();
                         auto advanced_value = advanced_condition.value();
 
-                        size_t buffer = 0;
-
-                        NumericQueryComparison* cmp = reinterpret_cast<NumericQueryComparison*>(&conditions[conditions_count]);
-                        cmp->column_index = column->index;
+                        cmp.column_index = column->index;
                         
                         // Compiler checks lengths when comparing strings, no further optimisation needed.
-                        if (advanced_key == "less_than") cmp->op = where_compare_op::NUMERIC_LESS_THAN;
-                        else if (advanced_key == "greater_than") cmp->op = where_compare_op::NUMERIC_GREATER_THAN;
-                        else if (advanced_key == "less_than_equal_to") cmp->op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
-                        else if (advanced_key == "greater_than_equal_to") cmp->op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
+                        if (advanced_key == "less_than") cmp.op = where_compare_op::NUMERIC_LESS_THAN;
+                        else if (advanced_key == "greater_than") cmp.op = where_compare_op::NUMERIC_GREATER_THAN;
+                        else if (advanced_key == "less_than_equal_to") cmp.op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
+                        else if (advanced_key == "greater_than_equal_to") cmp.op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
                         else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         switch (column->type) {
-                            case types::integer: *((int*)&buffer) = (int)advanced_value.get_int64(); break;
-                            case types::float32: *((float*)&buffer) = (float)advanced_value.get_double(); break;
-                            default: buffer = advanced_value.get_uint64(); break;
+                            case types::integer: cmp.comparator.int32 = (int)advanced_value.get_int64(); break;
+                            case types::float32: cmp.comparator.float32 = (float)advanced_value.get_double(); break;
+                            default: cmp.comparator.unsigned_raw = advanced_value.get_uint64(); break;
                         }
-
-                        cmp->comparator = buffer;
 
                         conditions_count++;
                         if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
@@ -104,7 +101,7 @@ namespace query_compiler {
             else {
                 switch (column->type) {
                     case types::string: {
-                        StringQueryComparison* cmp = reinterpret_cast<StringQueryComparison*>(&conditions[conditions_count]);
+                        StringQueryComparison& cmp = conditions[conditions_count].string;
 
                         // We don't get type checking with raw_json, so manually do it.
                         if (type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
@@ -115,29 +112,26 @@ namespace query_compiler {
                         comparator.remove_prefix(1);
                         comparator.remove_suffix(1);
 
-                        cmp->op = where_compare_op::STRING_EQUAL;
-                        cmp->column_index = column->index;
-                        cmp->comparator = comparator;
-                        cmp->comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
+                        cmp.op = where_compare_op::STRING_EQUAL;
+                        cmp.column_index = column->index;
+                        cmp.comparator = comparator;
+                        cmp.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
 
                         break;
                     }
 
                     // Standard numbers with no specific requirements.
                     default: {
-                        size_t buffer = 0;
+                        NumericQueryComparison& cmp = conditions[conditions_count].numeric;
+                        cmp.op = where_compare_op::NUMERIC_EQUAL;
+                        cmp.column_index = column->index;
 
                         // Correctly cast binary values based on type.
                         switch (value.get_number_type()) {
-                            case number_type::floating_point_number: *((float*)&buffer) = (float)value.get_double(); break;
-                            case number_type::signed_integer: *((int*)&buffer) = (int)value.get_int64(); break;
-                            default: buffer = value.get_uint64(); break;
+                            case number_type::floating_point_number: cmp.comparator.float32 = (float)value.get_double(); break;
+                            case number_type::signed_integer: cmp.comparator.int32 = (int)value.get_int64(); break;
+                            default: cmp.comparator.unsigned_raw = value.get_uint64(); break;
                         }
-
-                        NumericQueryComparison* cmp = reinterpret_cast<NumericQueryComparison*>(&conditions[conditions_count]);
-                        cmp->op = where_compare_op::NUMERIC_EQUAL;
-                        cmp->column_index = column->index;
-                        cmp->comparator = buffer;
 
                         break;
                     }
@@ -159,7 +153,7 @@ namespace query_compiler {
         simdjson::ondemand::object conditions_object = query_object["where"];
 
         // Create buffer which should cover every condition operation.
-        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+        std::unique_ptr<QueryComparison[]> conditions(new QueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
         compiled_query->conditions = conditions.get();
 
         // Process all WHERE conditions.
@@ -198,7 +192,7 @@ namespace query_compiler {
         // Check for a seek_where statement.
         simdjson::ondemand::object seek_where_conditions;
         if (query_object["seek_where"].get(seek_where_conditions) == simdjson::error_code::SUCCESS) {
-            std::unique_ptr<GenericQueryComparison[]> seek_conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+            std::unique_ptr<QueryComparison[]> seek_conditions(new QueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
             compiled_query->seek_conditions = seek_conditions.get();
 
             // Process the conditions.
@@ -217,7 +211,7 @@ namespace query_compiler {
         std::unique_ptr<CompiledInsertQuery> compiled_query(new CompiledInsertQuery);
 
         // Allocate columns.length size of buffer since all columns are required at the moment for inserts.
-        std::unique_ptr<GenericInsertColumn[]> columns_inserted(new GenericInsertColumn[table->header.num_columns]); 
+        std::unique_ptr<InsertColumn[]> columns_inserted(new InsertColumn[table->header.num_columns]); 
         compiled_query->values = columns_inserted.get();
 
         // Iterate over the columns specified.
@@ -246,25 +240,22 @@ namespace query_compiler {
                     data.remove_prefix(1);
                     data.remove_suffix(1);
 
-                    StringInsertColumn* val = reinterpret_cast<StringInsertColumn*>(&columns_inserted[column->index]);
-                    val->data = data;
-                    val->data_hash = XXH64(data.data(), data.length(), HASH_SEED);
+                    StringInsertColumn& val = columns_inserted[column->index].string;
+                    val.data = data;
+                    val.data_hash = XXH64(data.data(), data.length(), HASH_SEED);
 
                     break;
                 }
 
                 default: {
-                    size_t buffer = 0;
-                    
+                    NumericInsertColumn& val = columns_inserted[column->index].numeric;
+
                     // Set data depending on type.
                     switch (column->type) {
-                        case types::float32: *((float*)&buffer) = (float)value.get_double(); break;
-                        case types::integer: *((int*)&buffer) = (int)value.get_int64(); break;
-                        default: buffer = value.get_uint64(); break;
+                        case types::float32: val.data.float32 = (float)value.get_double(); break;
+                        case types::integer: val.data.int32 = (int)value.get_int64(); break;
+                        default: val.data.unsigned_raw = value.get_uint64(); break;
                     }
-
-                    NumericInsertColumn* val = reinterpret_cast<NumericInsertColumn*>(&columns_inserted[column->index]);
-                    val->data = buffer;
 
                     break;
                 }
@@ -288,7 +279,7 @@ namespace query_compiler {
         simdjson::ondemand::object conditions_object = query_object["where"];
 
         // Create buffer which should cover every condition operation.
-        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+        std::unique_ptr<QueryComparison[]> conditions(new QueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
         compiled_query->conditions = conditions.get();
 
         // Process all WHERE conditions.
@@ -319,14 +310,14 @@ namespace query_compiler {
         simdjson::ondemand::object conditions_object = query_object["where"];
 
         // Create buffer which should cover every condition operation.
-        std::unique_ptr<GenericQueryComparison[]> conditions(new GenericQueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
+        std::unique_ptr<QueryComparison[]> conditions(new QueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
         compiled_query->conditions = conditions.get();
 
         // Process all WHERE conditions.
         compiled_query->conditions_count = parse_conditions(table, conditions.get(), conditions_object);
 
         // Create buffer to hold every possible update operation.
-        std::unique_ptr<GenericUpdate[]> updates(new GenericUpdate[table->header.num_columns]);
+        std::unique_ptr<UpdateSet[]> updates(new UpdateSet[table->header.num_columns]);
         compiled_query->changes = updates.get();
 
         simdjson::ondemand::object updates_object = query_object["changes"];
@@ -361,29 +352,26 @@ namespace query_compiler {
                     data.remove_prefix(1);
                     data.remove_suffix(1);
 
-                    StringUpdateSet* update = reinterpret_cast<StringUpdateSet*>(&updates[updates_count]);
-                    update->op = update_changes_op::STRING_SET;
-                    update->column_index = column->index;
-                    update->new_value = data;
-                    update->new_value_hash = XXH64(data.data(), data.length(), HASH_SEED);
+                    StringUpdateSet& update = updates[updates_count].string;
+                    update.op = update_changes_op::STRING_SET;
+                    update.column_index = column->index;
+                    update.new_value = data;
+                    update.new_value_hash = XXH64(data.data(), data.length(), HASH_SEED);
 
                     break;
                 }
 
                 default: {
-                    size_t buffer = 0;
+                    NumericUpdateSet& update = updates[updates_count].numeric;
+                    update.op = update_changes_op::NUMERIC_SET;
+                    update.column_index = column->index;
                     
                     // Set data depending on type.
                     switch (column->type) {
-                        case types::float32: *((float*)&buffer) = (float)value.get_double(); break;
-                        case types::integer: *((int*)&buffer) = (int)value.get_int64(); break;
-                        default: buffer = value.get_uint64(); break;
+                        case types::float32: update.new_value.float32 = (float)value.get_double(); break;
+                        case types::integer: update.new_value.int32 = (int)value.get_int64(); break;
+                        default: update.new_value.unsigned_raw = value.get_uint64(); break;
                     }
-
-                    NumericUpdateSet* update = reinterpret_cast<NumericUpdateSet*>(&updates[updates_count]);
-                    update->op = update_changes_op::NUMERIC_SET;
-                    update->column_index = column->index;
-                    update->new_value = buffer;
 
                     break;
                 }

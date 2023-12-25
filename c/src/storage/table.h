@@ -9,6 +9,7 @@
 #include "../deps/rapidjson/document.h"
 #include "compiled-query.h"
 #include "../logging/logger.h"
+#include "table-reusable-types.h"
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
@@ -16,13 +17,6 @@
 #define BULK_HEADER_READ_COUNT 10
 
 // Table structs.
-enum types: uint32_t {
-    integer,
-    float32,
-    long64,
-    byte,
-    string
-};
 
 struct table_column {
     char name[33] = {0};
@@ -102,7 +96,7 @@ class ActiveTable {
         // Needs refactoring with concurrent operations.
         record_header* header_buffer;
 
-        bool verify_record_conditions_match(record_header* record, query_compiler::GenericQueryComparison* conditions, uint32_t conditions_length);
+        bool verify_record_conditions_match(record_header* record, query_compiler::QueryComparison* conditions, uint32_t conditions_length);
         void assemble_record_data_to_json(record_header* record, size_t included_columns, rapidjson::Document& output);
 
         // Iterator for scanning the tables.
