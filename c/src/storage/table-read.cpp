@@ -16,7 +16,9 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 switch (column.type) {
                     case types::byte: if (cmp.comparator.byte != data->byte) return false; break;
                     case types::long64: if (cmp.comparator.long64 != data->long64) return false; break;
-                    default: if (cmp.comparator.unsigned_raw != data->unsigned_raw) return false; break;
+
+                    // Guaranteed to be 4 bytes in length.
+                    default: if (cmp.comparator.unsigned32_raw != data->unsigned32_raw) return false; break;
                 }
 
                 break;
