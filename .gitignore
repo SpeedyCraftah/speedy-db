@@ -3,6 +3,7 @@
 /c/bin/*
 /Rubbish
 node_modules
+/c/build
 
 js/*
 !js/driver.js
