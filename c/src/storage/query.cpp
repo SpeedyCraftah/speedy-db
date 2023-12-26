@@ -599,7 +599,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
     }
 
     // Get the permissions available for the user in the table.
-    const TablePermissions* table_permissions = new TablePermissions({true, true, true, true, true});//get_table_permissions_for_account(table, account);
+    const TablePermissions* table_permissions = get_table_permissions_for_account(table, account);
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {
@@ -609,11 +609,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     switch (op) {
         case query_ops::fetch_table_meta: {
-            std::string_view table_name = table->header.name;
-
             rapidjson::Document json;
             json.SetObject();
-            json.AddMember("name", rapidjson_string_view(table_name), json.GetAllocator());
+            json.AddMember("name", rapidjson_string_view(table->name), json.GetAllocator());
             json.AddMember("column_count", table->header.num_columns, json.GetAllocator());
 
             rapidjson::Document columns;
@@ -761,9 +759,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             table_rebuild_statistics stats = rebuild_table(&table);
             auto end_time = std::chrono::high_resolution_clock::now();
 
-            log("Rebuild of table %s has been completed (took %ums)", table->header.name, (unsigned int)((end_time - start_time) / std::chrono::milliseconds(1)));
+            log("Rebuild of table %s has been completed (took %ums)", table->name, (unsigned int)((end_time - start_time) / std::chrono::milliseconds(1)));
             log("=== Table %s rebuild statistics ===\n- %u records discovered\n- %u dead records removed\n- %u short dynamics optimized", table->header.name, stats.record_count, stats.dead_record_count, stats.short_dynamic_count);
-            log("=== Table %s rebuild statistics ===", table->header.name);
+            log("=== Table %s rebuild statistics ===", table->name);
 
             rapidjson::Document data;
             data.SetObject();
