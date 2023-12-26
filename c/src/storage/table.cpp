@@ -5,9 +5,11 @@
 #include <unordered_map>
 #include "../deps/xxh/xxhash.h"
 #include "../logging/logger.h"
+#include "compiled-query.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include "query-builder.h"
 
 // TODO - add mutex
 // TODO - preallocate record header for each handle instead of mallocing and freeing on every query
@@ -66,6 +68,9 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     // Create record buffer.
     this->header_buffer = (record_header*)malloc(this->record_size * BULK_HEADER_READ_COUNT);
 
+    // Set table name.
+    this->name = this->header.name;
+
     // Load the account permissions if table is not internal as internal tables do not have custom permissions.
     if (!this->is_internal) {
         // Create permission map instance.
@@ -74,19 +79,16 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
         // Get permissions table.
         ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
 
-        // Load the account permissions.
-        /*nlohmann::json query = {
-            { "where", {
-                { "table", this->header.name }
-            } }
-        };
-        nlohmann::json accounts = permissions_table->find_all_records(query, 1, 0, 1, false);
+        query_builder::find_query<1> query(permissions_table);
+        query.add_where_condition("table", query.string_equal_to(this->name));
 
-        // Add the accounts to the map.
-        for (const auto& account : accounts) {
-            uint8_t permissions = account["permissions"];
-            (*this->permissions)[account["index"]] = *(TablePermissions*)&permissions;
-        }*/
+        rapidjson::Document accounts;
+        permissions_table->find_many_records(query.build(), accounts);
+
+        for (const auto& account : accounts.GetArray()) {
+            uint8_t permissions = account["permissions"].GetUint();
+            (*this->permissions)[account["index"].GetUint()] = *(TablePermissions*)&permissions;
+        }
     }
 
     // Close handles which are not needed.
