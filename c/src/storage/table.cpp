@@ -33,7 +33,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     this->data_handle_precise = fileno(this->data_handle);
     fseek(data_handle, 0, SEEK_SET);
 
-    this->dynamic_handle = open(dynamic_path.c_str(), O_RDWR | O_CREAT);
+    this->dynamic_handle = open(dynamic_path.c_str(), O_RDWR | O_CREAT, 0666);
 
     // Read the header.
     fread_unlocked(&this->header, 1, sizeof(table_header), header_handle);
