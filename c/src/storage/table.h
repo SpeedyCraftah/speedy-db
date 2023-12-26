@@ -199,6 +199,7 @@ class ActiveTable {
         std::unordered_map<size_t, TablePermissions>* permissions = nullptr;
         table_header header;
         table_column* header_columns;
+        std::string_view name;
 };
 
 // External table functions.
