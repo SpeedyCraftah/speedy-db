@@ -8,7 +8,6 @@
 #include "../deps/rapidjson/document.h"
 #include "table.h"
 #include "compiled-query.h"
-#include "../deps/xxh-constexpr/xxh3.h"
 
 namespace query_compiler {
     enum error {
