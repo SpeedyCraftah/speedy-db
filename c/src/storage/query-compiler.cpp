@@ -88,7 +88,7 @@ namespace query_compiler {
                         switch (column->type) {
                             case types::integer: cmp.comparator.int32 = (int)advanced_value.get_int64(); break;
                             case types::float32: cmp.comparator.float32 = (float)advanced_value.get_double(); break;
-                            default: cmp.comparator.unsigned_raw = advanced_value.get_uint64(); break;
+                            default: cmp.comparator.unsigned64_raw = advanced_value.get_uint64(); break;
                         }
 
                         conditions_count++;
@@ -130,7 +130,7 @@ namespace query_compiler {
                         switch (value.get_number_type()) {
                             case number_type::floating_point_number: cmp.comparator.float32 = (float)value.get_double(); break;
                             case number_type::signed_integer: cmp.comparator.int32 = (int)value.get_int64(); break;
-                            default: cmp.comparator.unsigned_raw = value.get_uint64(); break;
+                            default: cmp.comparator.unsigned64_raw = value.get_uint64(); break;
                         }
 
                         break;
@@ -254,7 +254,7 @@ namespace query_compiler {
                     switch (column->type) {
                         case types::float32: val.data.float32 = (float)value.get_double(); break;
                         case types::integer: val.data.int32 = (int)value.get_int64(); break;
-                        default: val.data.unsigned_raw = value.get_uint64(); break;
+                        default: val.data.unsigned64_raw = value.get_uint64(); break;
                     }
 
                     break;
@@ -370,7 +370,7 @@ namespace query_compiler {
                     switch (column->type) {
                         case types::float32: update.new_value.float32 = (float)value.get_double(); break;
                         case types::integer: update.new_value.int32 = (int)value.get_int64(); break;
-                        default: update.new_value.unsigned_raw = value.get_uint64(); break;
+                        default: update.new_value.unsigned64_raw = value.get_uint64(); break;
                     }
 
                     break;
