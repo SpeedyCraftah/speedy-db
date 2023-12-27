@@ -327,9 +327,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (key == "UPDATE_ACCOUNTS") permissions.UPDATE_ACCOUNTS = value;
                 else if (key == "DELETE_ACCOUNTS") permissions.DELETE_ACCOUNTS = value;
                 else if (key == "TABLE_ADMINISTRATOR") permissions.TABLE_ADMINISTRATOR = value;
-                else throw query_error::params_invalid;
-
-                
+                else throw query_error::params_invalid;                
             }
 
             // Save and load the account.
@@ -391,7 +389,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             permissions.AddMember("DELETE_TABLES", (bool)t_account->permissions.DELETE_TABLES, permissions.GetAllocator());
             permissions.AddMember("OPEN_CLOSE_TABLES", (bool)t_account->permissions.OPEN_CLOSE_TABLES, permissions.GetAllocator());
             permissions.AddMember("TABLE_ADMINISTRATOR", (bool)t_account->permissions.TABLE_ADMINISTRATOR, permissions.GetAllocator());
-            permissions.AddMember("HIERARCHY_INDEX", (bool)t_account->permissions.HIERARCHY_INDEX, permissions.GetAllocator());
+            permissions.AddMember("HIERARCHY_INDEX", (uint32_t)t_account->permissions.HIERARCHY_INDEX, permissions.GetAllocator());
 
             // Send the response.
             send_query_response(socket_data, nonce, permissions);
@@ -473,7 +471,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
-            std::string_view table_name_sv = d["password"];
+            std::string_view table_name_sv = d["table"];
             std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
 
             // If table name starts with a reserved sequence.
