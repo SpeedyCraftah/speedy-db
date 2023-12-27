@@ -131,7 +131,7 @@ void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* accou
     NumericType index_u;
     index_u.unsigned64_raw = account->internal_index;
 
-    query_builder::erase_query<1> query(permissions_table);
+    query_builder::erase_query<2> query(permissions_table);
     query.add_where_condition("table", query.string_equal_to(table->name));
     query.add_where_condition("index", query.numeric_equal_to(index_u));
     query.set_limit(1);
