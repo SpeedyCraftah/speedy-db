@@ -1,7 +1,6 @@
 #pragma once
 
 #include <pthread.h>
-#include "../deps/json.hpp"
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/dh.h>

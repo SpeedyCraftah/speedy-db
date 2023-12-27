@@ -3,13 +3,13 @@
 #include <cstdio>
 #include <mutex>
 #include <unordered_map>
-#include "../deps/json.hpp"
 #include "../permissions/permissions.h"
 #include "../deps/simdjson/simdjson.h"
 #include "../deps/rapidjson/document.h"
 #include "compiled-query.h"
 #include "../logging/logger.h"
 #include "table-reusable-types.h"
+#include <map>
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236

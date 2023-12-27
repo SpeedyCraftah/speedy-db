@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include "../deps/json.hpp"
 #include "../storage/table.h"
 #include "permissions.h"
 

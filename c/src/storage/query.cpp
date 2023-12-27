@@ -1,6 +1,5 @@
 #include "query.h"
 
-#include "../deps/json.hpp"
 #include "../connections/client.h"
 #include <memory>
 #include <regex>
