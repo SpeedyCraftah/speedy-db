@@ -1,10 +1,46 @@
-# Fetch all cpp files from the current directory and sub directories and put in a variable.
-files = $(wildcard ./src/*.cpp) $(wildcard ./src/**/*.cpp) $(wildcard ./src/*.c) $(wildcard ./src/**/*.c) $(wildcard ./src/**/**/*.c) $(wildcard ./src/**/**/*.cpp)
-flags = -pthread -DRAPIDJSON_HAS_STDSTRING=1
+# Directories
+SRC_DIR = ./src
+BUILD_DIR = ./build
+BIN_DIR = ./bin
 
-run:
-	g++ -std=c++20 -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1 -o ./bin/bin $(flags) $(files) -lcrypto
-	./bin/bin enable-root-account
+# Files
+SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp) $(wildcard $(SRC_DIR)/**/*.cpp) $(wildcard $(SRC_DIR)/*.c) $(wildcard $(SRC_DIR)/**/*.c) $(wildcard $(SRC_DIR)/**/**/*.c) $(wildcard $(SRC_DIR)/**/**/*.cpp)
+OBJ_FILES = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SRC_FILES))
+FLAGS = -std=c++20 -pthread -DRAPIDJSON_HAS_STDSTRING=1
 
-production:
-	g++ -std=c++20 -Wall -Ofast -ffat-lto-objects -flto -o ./bin/bin $(flags) $(files) -lcrypto
+# Targets
+.PHONY: all clean clean-bin debug production kill
+
+all: debug
+
+debug: CXXFLAGS = $(FLAGS) -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1
+debug: $(BIN_DIR)/debug
+
+production: CXXFLAGS = $(FLAGS) -Wall -Ofast -ffat-lto-objects -flto
+production: $(BIN_DIR)/production
+
+# Linking
+$(BIN_DIR)/debug: $(OBJ_FILES)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJ_FILES) -lcrypto
+	$(BIN_DIR)/debug enable-root-account
+
+$(BIN_DIR)/production: $(OBJ_FILES)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJ_FILES) -lcrypto
+
+# Compiling
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Cleaning
+clean:
+	rm -rf $(BUILD_DIR) $(BIN_DIR)/debug $(BIN_DIR)/production
+
+clean-bin:
+	rm -rf $(BIN_DIR)/debug $(BIN_DIR)/production
+
+# Misc
+kill:
+	sudo kill $(sudo lsof -t -i :4546)
