@@ -33,7 +33,7 @@ FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
 int server_config::version::major = 2;
-int server_config::version::minor = 0;
+int server_config::version::minor = 5;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
 bool server_config::root_account_enabled = false;
