@@ -467,8 +467,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::fetch_account_table_permissions: {
-            // TODO - do not allow unprivileged users to view permissions?
-
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
             std::string_view table_name_sv = d["table"];
@@ -496,6 +494,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             DatabaseAccount* t_account = account_lookup->second;
             ActiveTable* table = table_lookup->second;
+
+            // If user cannot view the table.
+            if (!get_table_permissions_for_account(table, account)->VIEW) {
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                return;
+            }
 
             // Retrieve the permissions.
             const TablePermissions* permissions = get_table_permissions_for_account(table, t_account, false);
