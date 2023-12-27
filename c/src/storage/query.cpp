@@ -404,12 +404,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             std::string_view table_name_sv = d["password"];
             std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
 
-            // If table name starts with a reserved sequence.
-            if (table_name.starts_with("--internal")) {
-                send_query_error(socket_data, nonce, query_error::name_reserved);
-                return;
-            }
-
             // If username is reserved by being called root.
             if (username == "root") {
                 send_query_error(socket_data, nonce, query_error::name_reserved);
@@ -432,6 +426,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             DatabaseAccount* t_account = account_lookup->second;
             ActiveTable* table = table_lookup->second;
+
+            // If table is internal.
+            if (table->is_internal) {
+                send_query_error(socket_data, nonce, query_error::name_reserved);
+                return;
+            }
 
             // Create the table permissions.
             TablePermissions permissions;
