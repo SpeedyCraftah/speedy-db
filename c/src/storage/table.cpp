@@ -255,21 +255,21 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
                 hashed_entry* entry = (hashed_entry*)base;
 
                 // Allocate space for the dynamic data loading.
-                dynamic_record* dynamic_data = (dynamic_record*)malloc(sizeof(dynamic_record) + entry->size + 1);
+                dynamic_record* dynamic_data = (dynamic_record*)malloc(sizeof(dynamic_record) + entry->size);
 
                 // Read the dynamic data to the allocated space.
-                pread(table->dynamic_handle, dynamic_data, sizeof(dynamic_record) + entry->size + 1, entry->record_location);
+                pread(table->dynamic_handle, dynamic_data, sizeof(dynamic_record) + entry->size, entry->record_location);
 
                 // Update short string statistic if short.
-                if (entry->size + 1 != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
+                if (entry->size != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
 
                 // Update the record data for both records.
                 dynamic_data->record_location = ftell(new_data_handle);
-                dynamic_data->physical_size = entry->size + 1 + sizeof(dynamic_record);
+                dynamic_data->physical_size = entry->size + sizeof(dynamic_record);
                 entry->record_location = ftell(new_dynamic_handle);
 
                 // Write the dynamic data to the new file.
-                fwrite_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size + 1, new_dynamic_handle);
+                fwrite_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size, new_dynamic_handle);
 
                 // Free the allocated dynamic data as it is not needed anymore.
                 free(dynamic_data);
@@ -291,6 +291,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
     std::string safe_table_name = std::string(table->header.name);
 
     // Close the table.
+    open_tables->erase(table->header.name);
     delete table;
 
     // Delete old data files.
@@ -306,6 +307,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
 
     // Reopen the table and replace variable with new pointer.
     *table_var = new ActiveTable(safe_table_name.c_str(), is_internal);
+    (*open_tables)[table->header.name] = *table_var;
 
     free(header);
 
