@@ -71,18 +71,21 @@ int main(int argc, char** args) {
 
         // Unique identifier of permission entry.
         columns[0].index = 0;
+        columns[0].name_length = sizeof("index") - 1;
         strcpy(columns[0].name, "index");
         columns[0].size = sizeof(size_t);
         columns[0].type = types::long64;
 
         // Name of target table.
         columns[1].index = 1;
+        columns[1].name_length = sizeof("table") - 1;
         strcpy(columns[1].name, "table");
         columns[1].size = 0;
         columns[1].type = types::string;
 
         // Permission bitfield of entry.
         columns[2].index = 2;
+        columns[2].name_length = sizeof("permissions") - 1;
         strcpy(columns[2].name, "permissions");
         columns[2].size = sizeof(uint8_t);
         columns[2].type = types::byte;
