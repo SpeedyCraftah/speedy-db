@@ -21,7 +21,6 @@ A database written in C++ and C which has been started due to me needing a proje
 - - Large data type used for optimised transfers and caching procedures of data in the range of KB-GB.
 - ACID compliance.
 - New data type - references to other records in same or different table.
-- Accelerated unindexed reads by accessing the disk for records in bulk.
 
 # Supported platforms
 - Linux (no windows yet sorry).
