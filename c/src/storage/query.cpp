@@ -1,8 +1,10 @@
 #include "query.h"
 
-#include "../deps/json.hpp"
 #include "../connections/client.h"
+#include <memory>
 #include <regex>
+#include <string>
+#include <string_view>
 #include <sys/types.h>
 #include <thread>
 #include <unistd.h>
@@ -12,78 +14,104 @@
 #include <iostream>
 #include "../main.h"
 #include "../misc/valid_string.h"
+#include "compiled-query.h"
+#include "query-compiler.h"
 #include "table.h"
 #include <dirent.h>
 
-const char* type_int_to_string(types type) {
+std::string_view type_int_to_string(types type) {
     if (type == types::integer) return "integer";
     else if (type == types::string) return "string";
     else if (type == types::byte) return "byte";
     else if (type == types::float32) return "float";
     else if (type == types::long64) return "long";
-    else return nullptr;
+    else return std::string_view("");
 }
 
-types type_string_to_int(const char* type) {
-    if (strcmp(type, "integer") == 0) return types::integer;
-    else if (strcmp(type, "string") == 0) return types::string;
-    else if (strcmp(type, "byte") == 0) return types::byte;
-    else if (strcmp(type, "float") == 0) return types::float32;
-    else if (strcmp(type, "long") == 0) return types::long64;
+types type_string_to_int(std::string_view& type) {
+    if (type == "integer") return types::integer;
+    else if (type == "string") return types::string;
+    else if (type == "byte") return types::byte;
+    else if (type == "float") return types::float32;
+    else if (type == "long") return types::long64;
     else return (types)-1;
 }
 
-void send_query_response(client_socket_data* socket_data, int nonce, nlohmann::json& data) {
-    send_json(socket_data, {
-        { socket_data->config.short_attr ? "n" : "nonce", nonce },
-        { socket_data->config.short_attr ? "d" : "data", data }
-    });
+// TODO - optimisation needs to be looked into
+
+void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
 }
 
 void send_query_response(client_socket_data* socket_data, int nonce) {
-    send_json(socket_data, {
-        { socket_data->config.short_attr ? "n" : "nonce", nonce }
-    });
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
 }
 
-void send_query_error(client_socket_data* socket_data, int nonce, int error) {
-    send_json(socket_data, {
-        { socket_data->config.short_attr ? "n" : "nonce", nonce },
-        { socket_data->config.short_attr ? "d" : "data", {
-            { socket_data->config.short_attr ? "c" : "code", error },
-            { socket_data->config.short_attr ? "t" : "text", socket_data->config.error_text ? errors::text[error] : "" }
-        }},
-        { socket_data->config.short_attr ? "e" : "error", true }
-    });
+void send_query_error(client_socket_data* socket_data, int nonce, query_error error) {
+    rapidjson::Document data_object;
+    data_object.SetObject();
+    data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_code), error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_text), query_error_text[error], data_object.GetAllocator());
+
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data_object, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.error), 1, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
+}
+
+// TODO - query and query compiler errors are the same, remove error code in response with next update.
+void send_query_error(client_socket_data* socket_data, int nonce, query_compiler::error error) {
+    rapidjson::Document data_object;
+    data_object.SetObject();
+    data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_code), error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_text), query_compiler::error_text[error], data_object.GetAllocator());
+
+    rapidjson::Document response_object;
+    response_object.SetObject();
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data_object, response_object.GetAllocator());
+    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.error), 1, response_object.GetAllocator());
+
+    send_json(socket_data, response_object);
 }
 
 // TODO - convert all to this
 #define query_error(error) send_query_error(socket_data, nonce, error)
 
-void process_query(client_socket_data* socket_data, const nlohmann::json& data) {
+std::mutex table_open_mutex;
+
+// TODO - remove op-o conversion in js
+void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
     int socket_id = socket_data->socket_id;
     bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
     DatabaseAccount* account = socket_data->account;
-    uint nonce = 0;
 
-    if (data.contains(short_attr ? "n" : "nonce") && data[short_attr ? "n" : "nonce"].is_number_unsigned()) {
-        nonce = data[short_attr ? "n" : "nonce"];
-    }
+    size_t op;
+    simdjson::ondemand::object d;
 
-    if (!data.contains(short_attr ? "o" : "op") || !data[short_attr ? "o" : "op"].is_number_unsigned()) {
-        send_query_error(socket_data, nonce, errors::op_invalid);
+    if (data["op"].get(op) != simdjson::error_code::SUCCESS) {
+        send_query_error(socket_data, nonce, query_error::op_invalid);
         return;
-    } else if (!data.contains(short_attr ? "d" : "data") || !data[short_attr ? "d" : "data"].is_object()) {
-        send_query_error(socket_data, nonce, errors::data_invalid);
+    } else if (data[socket_data->key_strings.sj_data].get(d) != simdjson::error_code::SUCCESS) {
+        send_query_error(socket_data, nonce, query_error::data_invalid);
         return;
     }
 
-    auto d = data[short_attr ? "d" : "data"];
-    uint op = data[short_attr ? "o" : "op"];
-    
     if (op >= query_ops::no_query_found_placeholder) {
-        send_query_error(socket_data, nonce, errors::op_invalid);
+        send_query_error(socket_data, nonce, query_error::op_invalid);
         return;
     }
 
@@ -95,37 +123,45 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         case query_ops::open_table: {
             if (!account->permissions.OPEN_CLOSE_TABLES) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
-            if (!d.contains("table") || !d["table"].is_string()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+            // TODO - try not to use string
+            std::string_view name_sv;
+            if (d["table"].get(name_sv) != simdjson::error_code::SUCCESS) {
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
-
-            std::string name = d["table"];
+            std::string name = {name_sv.begin(), name_sv.end()};
 
             // If name starts with a reserved sequence.
-            if (name.find("--internal") == 0) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+            // TODO - check for vulnerabilities.
+            if (name.starts_with("--internal")) {
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
+            table_open_mutex.lock();
+
             // Check if table is already open.
-            if (open_tables->count(name) == 1) {
-                send_query_error(socket_data, nonce, errors::table_already_open);
+            if (open_tables->contains(name)) {
+                table_open_mutex.unlock();
+                send_query_error(socket_data, nonce, query_error::table_already_open);
                 return;
             }
 
             // Check if table exists.
             if (!table_exists(name.c_str())) {
-                send_query_error(socket_data, nonce, errors::table_not_found);
+                table_open_mutex.unlock();
+                send_query_error(socket_data, nonce, query_error::table_not_found);
                 return;
             }
 
             // Open the table.
-            new ActiveTable(name.c_str(), false);
+            (*open_tables)[name] = new ActiveTable(name.c_str(), false);
+
+            table_open_mutex.unlock();
 
             log("Table %s has been loaded into memory", name.c_str());
 
@@ -134,73 +170,72 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         case query_ops::create_table: {
-            if (!account->permissions.CREATE_TABLES) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.CREATE_TABLES) return query_error(query_error::insufficient_privileges);
 
+            std::string_view name_sv;
+            simdjson::ondemand::object columns_object;
             if (
-                !d.contains("name") || !d["name"].is_string() ||
-                !d.contains("columns") || !d["columns"].is_object()
-            ) return query_error(errors::params_invalid);
+                d["name"].get(name_sv) != simdjson::error_code::SUCCESS || 
+                d["columns"].get(columns_object) != simdjson::error_code::SUCCESS
+            ) return query_error(query_error::params_invalid);
 
-            if (d["columns"].size() == 0) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+            std::string name = {name_sv.begin(), name_sv.end()};
+
+            if (columns_object.is_empty()) {
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
-            if (d["columns"].size() > 20) {
-                send_query_error(socket_data, nonce, errors::packet_size_exceeded);
+            // Slow but doesn't matter in this query.
+            size_t columns_object_count = columns_object.count_fields();
+
+            if (columns_object_count > 20) {
+                send_query_error(socket_data, nonce, query_error::too_many_columns);
                 return;
             }
-
-            std::string name = d["name"];
 
             // If name starts with a reserved sequence.
-            if (name.find("--internal") == 0) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+            if (name.starts_with("--internal")) {
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             if (
                 name.length() > 32 || name.length() < 2 || !misc::name_string_legal(name)
             ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
             if (table_exists(name.c_str())) {
-                send_query_error(socket_data, nonce, errors::table_conflict);
+                send_query_error(socket_data, nonce, query_error::table_conflict);
                 return;
             }
 
             // Allocate space for the columns.
-            int iteration = 0;
-            table_column* columns = (table_column*)malloc(d["columns"].size() * sizeof(table_column));
+            size_t iteration = 0;
 
-            for (auto& item : d["columns"].items()) {
+            std::unique_ptr<table_column[]> columns(new table_column[columns_object_count]);
+            for (auto item : columns_object) {
+                // C++ regex doesn't support string views :(
+                std::string_view key_sv = item.unescaped_key();
+                std::string key = {key_sv.begin(), key_sv.end()};
                 if (
-                    !std::regex_match(item.key(), std::regex("^[a-z_]+$")) ||
-                    item.key().length() > 32 || item.key().length() < 2
+                    !std::regex_match(key, std::regex("^[a-z_]+$")) ||
+                    key.length() > 32 || key.length() < 2
                 ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
-                auto column_d = item.value();
-
-                if (
-                    !column_d.is_object() ||
-                    !column_d.contains("type") ||
-                    !column_d["type"].is_string()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
+                simdjson::ondemand::object column_d = item.value();
 
                 // Check if type exists.
-                std::string d = column_d["type"];
-                types type = type_string_to_int(d.c_str());
+                std::string_view d = column_d["type"];
+                types type = type_string_to_int(d);
 
                 if (type == -1) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
 
@@ -216,17 +251,15 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
                 else if (type == types::long64) new_column.size = 8;
 
                 // Copy name.
-                strcpy(new_column.name, item.key().c_str());
+                strcpy(new_column.name, key.c_str());
+                new_column.name_length = key.length();
 
                 columns[iteration] = new_column;
                 ++iteration;
             }
 
             // Create table.
-            create_table(name.c_str(), columns, d["columns"].size());
-
-            // Release columns.
-            free(columns);
+            create_table(name.c_str(), columns.get(), columns_object_count);
             
             send_query_response(socket_data, nonce);
             return;
@@ -234,56 +267,42 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         case query_ops::create_database_account: {
             // TODO - dangerous permission since users can create accounts with permissions they dont have effectively 
-            if (!account->permissions.CREATE_ACCOUNTS) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.CREATE_ACCOUNTS) return query_error(query_error::insufficient_privileges);
 
-            if (
-                !d.contains("username") || !d["username"].is_string() ||
-                !d.contains("password") || !d["password"].is_string() ||
-                !d.contains("hierarchy_index") || !d["hierarchy_index"].is_number_unsigned() ||
-                !d.contains("permissions") || !d["permissions"].is_object()
-            ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            size_t hierarchy_index = d["hierarchy_index"];
 
             // If hierarchy index requested is more important or equal to current users index.
-            if ((unsigned int)d["hierarchy_index"] <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
-
-            // Ensure all items in the permissions object are booleans.
-            for (auto& item : d["permissions"]) {
-                if (!item.is_boolean()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-            }
+            if (hierarchy_index <= account->permissions.HIERARCHY_INDEX) return query_error(query_error::insufficient_privileges);
 
             // Check if user is granting privileges which the current user does not have.
             // TODO - implement this, need to upgrade C++ to C++17+ for constexpr
 
-            std::string username = d["username"];
-            std::string password = d["password"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view password_sv = d["password"];
+            std::string password = {password_sv.begin(), password_sv.end()};
 
             // If username or passwords are too short or are too long.
             if (username.length() > 32 || username.length() < 2 || !misc::name_string_legal(username) || password.length() > 100 || password.length() < 2) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
+                send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
 
             // If username is reserved by being called root.
             if (username == "root") {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // If hierarchy index is 0, or is above 1,000,000 which is reserved.
-            if ((unsigned int)d["hierarchy_index"] == 0 || (unsigned int)d["hierarchy_index"] > 1000000) {
-                send_query_error(socket_data, nonce, errors::value_reserved);
+            if (hierarchy_index == 0 || hierarchy_index > 1000000) {
+                send_query_error(socket_data, nonce, query_error::value_reserved);
                 return;
             }
 
             // If username is already taken.
             if (database_accounts->count(username) != 0) {
-                send_query_error(socket_data, nonce, errors::account_username_in_use);
+                send_query_error(socket_data, nonce, query_error::account_username_in_use);
                 return;
             }
 
@@ -293,16 +312,23 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             memset(&permissions, 0, sizeof(permissions));
 
             // Apply the hierarchy index.
-            permissions.HIERARCHY_INDEX = d["hierarchy_index"];
+            permissions.HIERARCHY_INDEX = hierarchy_index;
 
             // Set user-specified permissions, otherwise deny by default.
-            if (d["permissions"].contains("OPEN_CLOSE_TABLES")) permissions.OPEN_CLOSE_TABLES = d["permissions"]["OPEN_CLOSE_TABLES"];
-            if (d["permissions"].contains("CREATE_TABLES")) permissions.CREATE_TABLES = d["permissions"]["CREATE_TABLES"];
-            if (d["permissions"].contains("DELETE_TABLES")) permissions.DELETE_TABLES = d["permissions"]["DELETE_TABLES"];
-            if (d["permissions"].contains("CREATE_ACCOUNTS")) permissions.CREATE_ACCOUNTS = d["permissions"]["CREATE_ACCOUNTS"];
-            if (d["permissions"].contains("UPDATE_ACCOUNTS")) permissions.UPDATE_ACCOUNTS = d["permissions"]["UPDATE_ACCOUNTS"];
-            if (d["permissions"].contains("DELETE_ACCOUNTS")) permissions.DELETE_ACCOUNTS = d["permissions"]["DELETE_ACCOUNTS"];
-            if (d["permissions"].contains("TABLE_ADMINISTRATOR")) permissions.TABLE_ADMINISTRATOR = d["permissions"]["TABLE_ADMINISTRATOR"];
+            simdjson::ondemand::object permissions_object = d["permissions"];
+            for (auto permission : permissions_object) {
+                std::string_view key = permission.unescaped_key();
+                bool value = permission.value();
+
+                if (key == "OPEN_CLOSE_TABLES") permissions.OPEN_CLOSE_TABLES = value;
+                else if (key == "CREATE_TABLES") permissions.CREATE_TABLES = value;
+                else if (key == "DELETE_TABLES") permissions.DELETE_TABLES = value;
+                else if (key == "CREATE_ACCOUNTS") permissions.CREATE_ACCOUNTS = value;
+                else if (key == "UPDATE_ACCOUNTS") permissions.UPDATE_ACCOUNTS = value;
+                else if (key == "DELETE_ACCOUNTS") permissions.DELETE_ACCOUNTS = value;
+                else if (key == "TABLE_ADMINISTRATOR") permissions.TABLE_ADMINISTRATOR = value;
+                else throw query_error::params_invalid;                
+            }
 
             // Save and load the account.
             create_database_account((char*)username.c_str(), (char*)password.c_str(), permissions);
@@ -313,26 +339,24 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         case query_ops::delete_database_account: {
-            if (!account->permissions.DELETE_ACCOUNTS) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.DELETE_ACCOUNTS) return query_error(query_error::insufficient_privileges);
 
-            if (!d.contains("username") || !d["username"].is_string()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
-
-            std::string username = d["username"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view password_sv = d["password"];
+            std::string password = {password_sv.begin(), password_sv.end()};
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             DatabaseAccount* t_account = account_lookup->second;
 
             // If target account has a higher or same hierarchy index.
-            if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) return query_error(errors::insufficient_privileges);
+            if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) return query_error(query_error::insufficient_privileges);
 
             delete_database_account(t_account);
 
@@ -342,29 +366,30 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         case query_ops::fetch_account_privileges: {
-            if (!d.contains("username") || !d["username"].is_string()) return query_error(errors::params_invalid);
-
-            std::string username = d["username"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             DatabaseAccount* t_account = account_lookup->second;
 
             // Convert the permission data into an object that can be sent.
-            nlohmann::json permissions = nlohmann::json::object();
-            permissions["CREATE_ACCOUNTS"] = (bool)t_account->permissions.CREATE_ACCOUNTS;
-            permissions["DELETE_ACCOUNTS"] = (bool)t_account->permissions.DELETE_ACCOUNTS;
-            permissions["UPDATE_ACCOUNTS"] = (bool)t_account->permissions.UPDATE_ACCOUNTS;
-            permissions["CREATE_TABLES"] = (bool)t_account->permissions.CREATE_TABLES;
-            permissions["DELETE_TABLES"] = (bool)t_account->permissions.DELETE_TABLES;
-            permissions["OPEN_CLOSE_TABLES"] = (bool)t_account->permissions.OPEN_CLOSE_TABLES;
-            permissions["TABLE_ADMINISTRATOR"] = (bool)t_account->permissions.TABLE_ADMINISTRATOR;
-            permissions["HIERARCHY_INDEX"] = t_account->permissions.HIERARCHY_INDEX;
+            // TODO - construct initial object once.
+            rapidjson::Document permissions;
+            permissions.SetObject();
+            permissions.AddMember("CREATE_ACCOUNTS", (bool)t_account->permissions.CREATE_ACCOUNTS, permissions.GetAllocator());
+            permissions.AddMember("DELETE_ACCOUNTS", (bool)t_account->permissions.DELETE_ACCOUNTS, permissions.GetAllocator());
+            permissions.AddMember("UPDATE_ACCOUNTS", (bool)t_account->permissions.UPDATE_ACCOUNTS, permissions.GetAllocator());
+            permissions.AddMember("CREATE_TABLES", (bool)t_account->permissions.CREATE_TABLES, permissions.GetAllocator());
+            permissions.AddMember("DELETE_TABLES", (bool)t_account->permissions.DELETE_TABLES, permissions.GetAllocator());
+            permissions.AddMember("OPEN_CLOSE_TABLES", (bool)t_account->permissions.OPEN_CLOSE_TABLES, permissions.GetAllocator());
+            permissions.AddMember("TABLE_ADMINISTRATOR", (bool)t_account->permissions.TABLE_ADMINISTRATOR, permissions.GetAllocator());
+            permissions.AddMember("HIERARCHY_INDEX", (uint32_t)t_account->permissions.HIERARCHY_INDEX, permissions.GetAllocator());
 
             // Send the response.
             send_query_response(socket_data, nonce, permissions);
@@ -372,70 +397,63 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         case query_ops::set_table_account_privileges: {
-            if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(errors::insufficient_privileges);
+            if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(query_error::insufficient_privileges);
 
-            if (
-                !d.contains("username") || !d["username"].is_string() ||
-                !d.contains("permissions") || !d["permissions"].is_object() ||
-                !d.contains("table") || !d["table"].is_string()
-            ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
-
-            // Ensure all items in the permissions object are booleans.
-            for (auto& item : d["permissions"]) {
-                if (!item.is_boolean()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-            }
-
-            std::string username = d["username"];
-            std::string table_name = d["table"];
-
-            // If table name starts with a reserved sequence.
-            if (table_name.find("--internal") == 0) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
-                return;
-            }
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view table_name_sv = d["table"];
+            std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
 
             // If username is reserved by being called root.
             if (username == "root") {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             // Find the table.
             auto table_lookup = open_tables->find(table_name);
             if (table_lookup == open_tables->end()) {
-                send_query_error(socket_data, nonce, errors::table_not_open);
+                send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
             }
 
             DatabaseAccount* t_account = account_lookup->second;
             ActiveTable* table = table_lookup->second;
 
-            // Create the table permissions.
-            TablePermissions permissions;
+            // If table is internal.
+            if (table->is_internal) {
+                send_query_error(socket_data, nonce, query_error::name_reserved);
+                return;
+            }
 
-            // Deny the permissions by default by setting everything to 0.
-            memset(&permissions, 0, sizeof(permissions));
+            // Get existing permissions as base.
+            TablePermissions permissions = *get_table_permissions_for_account(table, t_account, false);
 
             // TODO - could use with constexpr too
             // Set user specified permissions.
-            if (d["permissions"].contains("VIEW")) permissions.VIEW = d["permissions"]["VIEW"];
-            if (d["permissions"].contains("READ")) permissions.READ = d["permissions"]["READ"];
-            if (d["permissions"].contains("WRITE")) permissions.WRITE = d["permissions"]["WRITE"];
-            if (d["permissions"].contains("UPDATE")) permissions.UPDATE = d["permissions"]["UPDATE"];
-            if (d["permissions"].contains("ERASE")) permissions.ERASE = d["permissions"]["ERASE"];
+
+            simdjson::ondemand::object permissions_object = d["permissions"];
+            for (auto permission : permissions_object) {
+                std::string_view key = permission.unescaped_key();
+                bool value = permission.value();
+                
+                if (key == "VIEW") permissions.VIEW = value;
+                else if (key == "READ") permissions.READ = value;
+                else if (key == "WRITE") permissions.WRITE = value;
+                else if (key == "UPDATE") permissions.UPDATE = value;
+                else if (key == "ERASE") permissions.ERASE = value;
+                else {
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
+                    return;
+                }
+            }
 
             // Apply the table permissions to the account.
             set_table_account_permissions(table, t_account, permissions);
@@ -446,53 +464,51 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
         }
 
         case query_ops::fetch_account_table_permissions: {
-            // TODO - do not allow unprivileged users to view permissions?
-
-            if (
-                !d.contains("username") || !d["username"].is_string() ||
-                !d.contains("table") || !d["table"].is_string()
-            ) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
-
-            std::string username = d["username"];
-            std::string table_name = d["table"];
+            std::string_view username_sv = d["username"];
+            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view table_name_sv = d["table"];
+            std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
 
             // If table name starts with a reserved sequence.
             if (table_name.find("--internal") == 0) {
-                send_query_error(socket_data, nonce, errors::name_reserved);
+                send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
-                send_query_error(socket_data, nonce, errors::username_not_found);
+                send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             // Find the table.
             auto table_lookup = open_tables->find(table_name);
             if (table_lookup == open_tables->end()) {
-                send_query_error(socket_data, nonce, errors::table_not_open);
+                send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
             }
 
             DatabaseAccount* t_account = account_lookup->second;
             ActiveTable* table = table_lookup->second;
 
+            // If user cannot view the table.
+            if (!get_table_permissions_for_account(table, account)->VIEW) {
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                return;
+            }
+
             // Retrieve the permissions.
             const TablePermissions* permissions = get_table_permissions_for_account(table, t_account, false);
 
             // Construct the account permissions for the table.
-            nlohmann::json data = {
-                { "VIEW", permissions->VIEW },
-                { "READ", permissions->READ },
-                { "WRITE", permissions->WRITE },
-                { "UPDATE", permissions->UPDATE },
-                { "ERASE", permissions->ERASE }
-            };
+            rapidjson::Document data;
+            data.SetObject();
+            data.AddMember("VIEW", permissions->VIEW, data.GetAllocator());
+            data.AddMember("READ", permissions->READ, data.GetAllocator());
+            data.AddMember("WRITE", permissions->WRITE, data.GetAllocator());
+            data.AddMember("UPDATE", permissions->UPDATE, data.GetAllocator());
+            data.AddMember("ERASE", permissions->ERASE, data.GetAllocator());
 
             // Send the response.
             send_query_response(socket_data, nonce, data);
@@ -501,7 +517,8 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         case query_ops::fetch_database_tables: {
             // Create an array to hold the table names.
-            nlohmann::json tables = nlohmann::json::array();
+            rapidjson::Document tables;
+            tables.SetArray();
 
             // Open the data directory.
             DIR* dir;
@@ -510,14 +527,14 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
             // If directory could not be opened.
             if (dir == NULL) {
-                send_query_error(socket_data, nonce, errors::internal);
+                send_query_error(socket_data, nonce, query_error::internal);
                 return;
             }
 
             // Iterate over every directory.
             while ((ent = readdir(dir)) != NULL) {
                 if (ent->d_type == DT_DIR) {
-                    std::string name = std::string(ent->d_name);
+                    std::string_view name = ent->d_name;
 
                     // If name is "." or "..".
                     if (name == "." || name == "..") continue;
@@ -526,7 +543,7 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
                     if (name.find("--internal-") == 0) continue;
 
                     // Push table name to the array.
-                    tables.push_back(name);
+                    tables.PushBack(rapidjson_string_view(name), tables.GetAllocator());
                 }
             }
 
@@ -540,12 +557,13 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         case query_ops::fetch_database_accounts: {
             // Create an array to hold the account names.
-            nlohmann::json accounts = nlohmann::json::array();
+            rapidjson::Document accounts;
+            accounts.SetArray();
 
             // Iterate over accounts map.
             for (auto& element : *database_accounts) {
                 // Push the accout name to the array.
-                accounts.push_back(element.first);
+                accounts.PushBack(rapidjson_string_view(element.first), accounts.GetAllocator());
             }
 
             // Send the response.
@@ -559,51 +577,61 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
     }
 
     // OPs that require table past here.
-    
-    if (!d.contains("table") || !d["table"].is_string()) {
-        send_query_error(socket_data, nonce, errors::params_invalid);
-        return;
-    }
 
-    std::string name = d["table"];
+
+    std::string_view name_sv = d["table"];
+    std::string name = {name_sv.begin(), name_sv.end()};
 
     // Check if table is open.
     if (open_tables->count(name) == 0) {
-        send_query_error(socket_data, nonce, errors::table_not_open);
+        send_query_error(socket_data, nonce, query_error::table_not_open);
         return;
     }
 
     ActiveTable* table = (*open_tables)[name];
+
+    // If user is querying internal table.
+    if (table->is_internal) {
+        send_query_error(socket_data, nonce, query_error::name_reserved);
+        return;
+    }
 
     // Get the permissions available for the user in the table.
     const TablePermissions* table_permissions = get_table_permissions_for_account(table, account);
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {
-        send_query_error(socket_data, nonce, errors::insufficient_privileges);
+        send_query_error(socket_data, nonce, query_error::insufficient_privileges);
         return;
     }
 
     switch (op) {
         case query_ops::fetch_table_meta: {
-            auto json = nlohmann::json({
-                { "name", table->header.name },
-                { "column_count", (int)table->header.num_columns },
-                { "columns", {} }
-            });
+            rapidjson::Document json;
+            json.SetObject();
+            json.AddMember("name", rapidjson_string_view(table->name), json.GetAllocator());
+            json.AddMember("column_count", table->header.num_columns, json.GetAllocator());
+
+            rapidjson::Document columns;
+            columns.SetObject();
 
             // Iterate over columns.
             for (int i = 0; i < table->header.num_columns; i++) {
                 table_column& column = table->header_columns[i];
-                volatile int s = 5;
+                std::string_view column_name = column.name;
+                std::string_view column_type_name = type_int_to_string(column.type);
 
-                json["columns"][column.name] = {
-                    { "name", column.name },
-                    { "size", (int)column.size },
-                    { "type", type_int_to_string(column.type) },
-                    { "physical_index", (int)column.index }
-                };
+                rapidjson::Document column_object;
+                column_object.SetObject();
+                column_object.AddMember("name", rapidjson_string_view(column_name), columns.GetAllocator());
+                column_object.AddMember("size", column.size, columns.GetAllocator());
+                column_object.AddMember("type", rapidjson_string_view(column_type_name), columns.GetAllocator());
+                column_object.AddMember("physical_index", column.index, columns.GetAllocator());
+
+                columns.AddMember(rapidjson_string_view(column_name), column_object, columns.GetAllocator());
             }
+
+            json.AddMember("columns", columns, json.GetAllocator());
 
             send_query_response(socket_data, nonce, json);
             return;
@@ -611,12 +639,17 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         case query_ops::close_table: {
             if (!account->permissions.OPEN_CLOSE_TABLES) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
+            table_open_mutex.lock();
+
             // Close the table.
             delete (*open_tables)[name];
+            open_tables->erase(name);
+
+            table_open_mutex.unlock();
 
             log("Table %s has been unloaded from memory", name.c_str());
 
@@ -626,530 +659,95 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
 
         case query_ops::insert_record: {
             if (!table_permissions->WRITE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
-            // Check if all parameters are present.
-            if (table->header.num_columns != d["columns"].size()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            simdjson::ondemand::object columns = d["columns"];
+            query_compiler::CompiledInsertQuery* query = query_compiler::compile_insert_query(table, columns);
 
-            // Verify data.
-            for (auto& item : d["columns"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                // Validate type.
-                if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && (!column_d.is_number()) ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-            }
-
-            table->insert_record(d["columns"]);
+            table->insert_record(query);
+            
             send_query_response(socket_data, nonce);
+
+            query->destroy();
             return;
         }
 
         case query_ops::find_one_record: {
             if (!table_permissions->READ) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
-            if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            query_compiler::CompiledFindQuery* query = query_compiler::compile_find_query(table, d);
 
-            // Which direction to read data in (end-start / start-end).
-            int seek_direction = 1;
+            rapidjson::Document result;
+            bool found = table->find_one_record(query, result);
+            if (!found) result.SetNull();
 
-            // Allow user to specify a custom seek direction (default is start-end).
-            if (d.contains("seek_direction")) {
-                if (!d["seek_direction"].is_number_integer()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                if (d["seek_direction"] != -1 && d["seek_direction"] != 1) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                seek_direction = d["seek_direction"];
-            }
-
-            bool limited_results = false;
-
-            // Allow user to specify which columns they want returned in the query.
-            if (d.contains("return")) {
-                limited_results = true;
-
-                if (!d["return"].is_array()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                // Check values in the array.
-                for (auto& column : d["return"]) {
-                    if (!column.is_string()) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
-                        return;
-                    }
-
-                    // Check if column exists.
-                    if (table->columns.count(column) == 0) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
-                        return;
-                    }
-                }
-            }
-
-            int dynamic_count = 0;
-
-            // Verify data.
-            for (auto& item : d["where"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                if (column_d.is_object()) {
-                    // Check if column is a number.
-                    if (column.type <= types::byte) {
-                        if (
-                            (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                            (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                            (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                            (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    } else if (column.type == types::string) {
-                        if (
-                            (column_d.contains("contains") && !column_d["contains"].is_string())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    }
-                } else if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && !column_d.is_number() ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                } 
-
-                if (column.type == types::string) {
-                    ++dynamic_count;
-                }
-            }
-
-            nlohmann::json result = table->find_one_record(d, dynamic_count, seek_direction, limited_results);
             send_query_response(socket_data, nonce, result);
+
+            query->destroy();
             return;
         }
 
         case query_ops::find_all_records: {
             if (!table_permissions->READ) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
-            if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            query_compiler::CompiledFindQuery* query = query_compiler::compile_find_query(table, d);
 
-            // Which direction to read data in (end-start / start-end).
-            int seek_direction = 1;
+            rapidjson::Document result;
+            table->find_many_records(query, result);
 
-            // Allow user to specify a custom seek direction (default is start-end).
-            if (d.contains("seek_direction")) {
-                if (!d["seek_direction"].is_number_integer()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                if (d["seek_direction"] != -1 && d["seek_direction"] != 1) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                seek_direction = d["seek_direction"];
-            }
-
-            int limit = 0;
-
-            if (d.contains("limit")) {
-                if(!d["limit"].is_number_unsigned()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                limit = d["limit"];
-            }
-
-            bool limited_results = false;
-
-            // Allow user to specify which columns they want returned in the query.
-            if (d.contains("return")) {
-                limited_results = true;
-
-                if (!d["return"].is_array()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                // Check values in the array.
-                for (auto& column : d["return"]) {
-                    if (!column.is_string()) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
-                        return;
-                    }
-
-                    // Check if column exists.
-                    if (table->columns.count(column) == 0) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
-                        return;
-                    }
-                }
-            }
-
-            int dynamic_count = 0;
-
-            if (d.contains("seek_where")) {
-                if (!d["seek_where"].is_object()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                for (auto& item : d["seek_where"].items()) {
-                    auto column_n = item.key();
-
-                    // Check if column exists.
-                    if (table->columns.count(column_n) == 0) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
-                        return;
-                    }
-
-                    auto column_d = item.value();
-                    table_column& column = table->columns[column_n];
-
-                    // Validate type.
-                    if (column_d.is_object()) {
-                        // Check if column is a number.
-                        if (column.type <= types::byte) {
-                            if (
-                                (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                                (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                                (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                                (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                            ) {
-                                send_query_error(socket_data, nonce, errors::params_invalid);
-                                return;
-                            }
-                        } else if (column.type == types::string) {
-                            if (
-                                (column_d.contains("contains") && !column_d["contains"].is_string())
-                            ) {
-                                send_query_error(socket_data, nonce, errors::params_invalid);
-                                return;
-                            }
-                        }
-                    } else if (
-                        column.type == types::integer && !column_d.is_number_integer() ||
-                        column.type == types::byte && !column_d.is_number_integer() ||
-                        column.type == types::string && !column_d.is_string() ||
-                        column.type == types::float32 && !column_d.is_number() ||
-                        column.type == types::long64 && !column_d.is_number()
-                    ) {
-                        send_query_error(socket_data, nonce, errors::params_invalid);
-                        return;
-                    }
-                }
-            }
-
-            // Verify data.
-            for (auto& item : d["where"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                // Validate type.
-                if (column_d.is_object()) {
-                    // Check if column is a number.
-                    if (column.type <= types::byte) {
-                        if (
-                            (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                            (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                            (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                            (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    } else if (column.type == types::string) {
-                        if (
-                            (column_d.contains("contains") && !column_d["contains"].is_string())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    }
-                } else if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && !column_d.is_number() ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                if (column.type == types::string) {
-                    ++dynamic_count;
-                }
-            }
-
-            nlohmann::json result = table->find_all_records(d, dynamic_count, limit, seek_direction, limited_results);
             send_query_response(socket_data, nonce, result);
+
+            query->destroy();
             return;
         }
 
         case query_ops::erase_all_records: {
             if (!table_permissions->ERASE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
-            if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            query_compiler::CompiledEraseQuery* query = query_compiler::compile_erase_query(table, d);
 
-            int limit = 0;
+            rapidjson::Document result;
+            result.SetObject();
+            result.AddMember("count", table->erase_many_records(query), result.GetAllocator());
 
-            if (d.contains("limit")) {
-                if(!d["limit"].is_number_unsigned()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
+            send_query_response(socket_data, nonce, result);
 
-                limit = d["limit"];
-            }
-
-            int dynamic_count = 0;
-
-            // Verify data.
-            for (auto& item : d["where"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                // Validate type.
-                if (column_d.is_object()) {
-                    // Check if column is a number.
-                    if (column.type <= types::byte) {
-                        if (
-                            (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                            (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                            (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                            (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    } else if (column.type == types::string) {
-                        if (
-                            (column_d.contains("contains") && !column_d["contains"].is_string())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    }
-                } else if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && !column_d.is_number() ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                if (column.type == types::string) {
-                    ++dynamic_count;
-                }
-            }
-
-            int result = table->erase_all_records(d, dynamic_count, limit);
-            nlohmann::json data = { {"count", result} };
-
-            send_query_response(socket_data, nonce, data);
+            query->destroy();
             return;
         }
 
         case query_ops::update_all_records: {
             if (!table_permissions->UPDATE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
-            if (!d.contains("where") || !d["where"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            query_compiler::CompiledUpdateQuery* query = query_compiler::compile_update_query(table, d);
 
-            if (!d.contains("changes") || !d["changes"].is_object()) {
-                send_query_error(socket_data, nonce, errors::params_invalid);
-                return;
-            }
+            rapidjson::Document result;
+            result.SetObject();
+            result.AddMember("count", table->update_many_records(query), result.GetAllocator());
 
-            int limit = 0;
+            send_query_response(socket_data, nonce, result);
 
-            if (d.contains("limit")) {
-                if(!d["limit"].is_number_unsigned()) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                limit = d["limit"];
-            }
-
-            int dynamic_count = 0;
-
-            // Verify data.
-            for (auto& item : d["where"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                // Validate type.
-                if (column_d.is_object()) {
-                    // Check if column is a number.
-                    if (column.type <= types::byte) {
-                        if (
-                            (column_d.contains("greater_than") && !column_d["greater_than"].is_number()) ||
-                            (column_d.contains("less_than") && !column_d["less_than"].is_number()) ||
-                            (column_d.contains("greater_than_equal_to") && !column_d["greater_than_equal_to"].is_number()) ||
-                            (column_d.contains("less_than_equal_to") && !column_d["less_than_equal_to"].is_number())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    } else if (column.type == types::string) {
-                        if (
-                            (column_d.contains("contains") && !column_d["contains"].is_string())
-                        ) {
-                            send_query_error(socket_data, nonce, errors::params_invalid);
-                            return;
-                        }
-                    }
-                } else if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && !column_d.is_number() ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    log("dome");
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                if (column.type == types::string) {
-                    ++dynamic_count;
-                }
-            }
-
-            // Verify data for changes.
-            for (auto& item : d["changes"].items()) {
-                auto column_n = item.key();
-
-                // Check if column exists.
-                if (table->columns.count(column_n) == 0) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-
-                auto column_d = item.value();
-                table_column& column = table->columns[column_n];
-
-                // Validate type.
-                if (
-                    column.type == types::integer && !column_d.is_number_integer() ||
-                    column.type == types::byte && !column_d.is_number_integer() ||
-                    column.type == types::string && !column_d.is_string() ||
-                    column.type == types::float32 && !column_d.is_number() ||
-                    column.type == types::long64 && !column_d.is_number()
-                ) {
-                    send_query_error(socket_data, nonce, errors::params_invalid);
-                    return;
-                }
-            }
-
-            int result = table->update_all_records(d, dynamic_count, limit);
-            nlohmann::json data = { {"count", result} };
-
-            send_query_response(socket_data, nonce, data);
+            query->destroy();
             return;
         }
 
         case query_ops::rebuild_table: {
             if (!table_permissions->WRITE) {
-                send_query_error(socket_data, nonce, errors::insufficient_privileges);
+                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
@@ -1159,15 +757,15 @@ void process_query(client_socket_data* socket_data, const nlohmann::json& data) 
             table_rebuild_statistics stats = rebuild_table(&table);
             auto end_time = std::chrono::high_resolution_clock::now();
 
-            log("Rebuild of table %s has been completed (took %ums)", table->header.name, (unsigned int)((end_time - start_time) / std::chrono::milliseconds(1)));
+            log("Rebuild of table %s has been completed (took %ums)", table->name, (unsigned int)((end_time - start_time) / std::chrono::milliseconds(1)));
             log("=== Table %s rebuild statistics ===\n- %u records discovered\n- %u dead records removed\n- %u short dynamics optimized", table->header.name, stats.record_count, stats.dead_record_count, stats.short_dynamic_count);
-            log("=== Table %s rebuild statistics ===", table->header.name);
+            log("=== Table %s rebuild statistics ===", table->name);
 
-            nlohmann::json data = {
-                {"short_dynamic_count", stats.short_dynamic_count},
-                {"dead_record_count", stats.dead_record_count},
-                {"record_count", stats.record_count}
-            };
+            rapidjson::Document data;
+            data.SetObject();
+            data.AddMember("short_dynamic_count", stats.short_dynamic_count, data.GetAllocator());
+            data.AddMember("dead_record_count", stats.dead_record_count, data.GetAllocator());
+            data.AddMember("record_count", stats.record_count, data.GetAllocator());
 
             send_query_response(socket_data, nonce, data);
             return;

@@ -1,10 +1,14 @@
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <stdint.h>
+#include <string_view>
 #include "accounts.h"
 #include "../main.h"
 #include "../crypto/crypto.h"
 #include "permissions.h"
+#include "../deps/xxh/xxhash.h"
+#include "../storage/query-builder.h"
 
 std::mutex accounts_mutex;
 
@@ -57,13 +61,16 @@ void delete_database_account(DatabaseAccount* account) {
     // Remove the account from the map.
     database_accounts->erase(std::string(account->username));
 
+    ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+
     // Remove all table-specific permissions from account.
-    nlohmann::json query = {
-        { "where", {
-            { "index", account->internal_index }
-        } }
-    };
-    (*open_tables)["--internal-table-permissions"]->erase_all_records(query, 0, 0);
+    NumericType index_u;
+    index_u.unsigned64_raw = account->internal_index;
+
+    query_builder::erase_query<1> query(permissions_table);
+    query.add_where_condition("index", query.numeric_equal_to(index_u));
+
+    permissions_table->erase_many_records(query.build());
 
     // Free the account from memory.
     free(account);
@@ -80,31 +87,38 @@ void update_database_account(DatabaseAccount* account, DatabaseAccount new_accou
     accounts_mutex.unlock();
 }
 
-void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account, TablePermissions& permissions) {
+void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account, TablePermissions permissions) {
+    ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+
     // Check if permissions are already set for this table and account.
     if (table->permissions->count(account->internal_index)) {
         // Delete existing set.
         table->permissions->erase(account->internal_index);
 
         // Update the database on the new permissions.
-        nlohmann::json query = {
-            { "where", {
-                { "table", table->header.name },
-                { "index", account->internal_index }
-            } },
-            { "changes", {
-                { "permissions", *(uint8_t*)&permissions }
-            } }
-        };
-        (*open_tables)["--internal-table-permissions"]->update_all_records(query, 1, 1);
+        NumericType permissions_u;
+        permissions_u.byte = *(uint8_t*)&permissions;
+
+        query_builder::update_query<1, 1> query(permissions_table);
+        query.add_where_condition("table", query.string_equal_to(table->name));
+        query.add_change("permissions", query.update_numeric(permissions_u));
+        query.set_limit(1);
+        
+        permissions_table->update_many_records(query.build());
     } else {
+        NumericType index_u;
+        index_u.unsigned64_raw = account->internal_index;
+
+        NumericType permissions_u;
+        permissions_u.byte = *(uint8_t*)&permissions;
+
+        query_builder::insert_query<3> query(permissions_table);
+        query.set_value("index", index_u);
+        query.set_value("permissions", permissions_u);
+        query.set_value("table", table->name);
+
         // Create the new permission entry.
-        nlohmann::json query = {
-            { "index", account->internal_index },
-            { "table", table->header.name },
-            { "permissions", *(uint8_t*)&permissions }
-        };
-        (*open_tables)["--internal-table-permissions"]->insert_record(query);
+        permissions_table->insert_record(query.build());
     }
 
     // Set the new permissions.
@@ -112,13 +126,17 @@ void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account,
 }
 
 void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* account) {
-    nlohmann::json query = {
-        { "where", {
-            { "table", table->header.name },
-            { "index", account->internal_index }
-        } }
-    };
-    (*open_tables)["--internal-table-permissions"]->erase_all_records(query, 1, 1);
+    ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+
+    NumericType index_u;
+    index_u.unsigned64_raw = account->internal_index;
+
+    query_builder::erase_query<2> query(permissions_table);
+    query.add_where_condition("table", query.string_equal_to(table->name));
+    query.add_where_condition("index", query.numeric_equal_to(index_u));
+    query.set_limit(1);
+
+    permissions_table->erase_many_records(query.build());
 }
 
 // Placeholder struct for all permissions.

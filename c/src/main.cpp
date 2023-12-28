@@ -21,6 +21,8 @@
 #include <cstdlib>
 #include "misc/files.h"
 #include "storage/table.h"
+#include <csignal>
+#include <string>
 
 // Global variable holding the socket ID.
 int server_socket_id;
@@ -31,7 +33,7 @@ std::unordered_map<std::string, DatabaseAccount*>* database_accounts;
 FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
-int server_config::version::major = 2;
+int server_config::version::major = 3;
 int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
@@ -42,6 +44,14 @@ char* server_config::root_password = nullptr;
 void on_terminate() {
     log("Killing socket and exiting");
     close(server_socket_id);
+
+    // Close all file handles and finalise table operations.
+    fclose(database_accounts_handle);
+    for (auto t : *open_tables) {
+        delete t.second;
+    }
+
+    exit(0);
 }
 
 int main(int argc, char** args) {
@@ -61,18 +71,21 @@ int main(int argc, char** args) {
 
         // Unique identifier of permission entry.
         columns[0].index = 0;
+        columns[0].name_length = sizeof("index") - 1;
         strcpy(columns[0].name, "index");
         columns[0].size = sizeof(size_t);
         columns[0].type = types::long64;
 
         // Name of target table.
         columns[1].index = 1;
+        columns[1].name_length = sizeof("table") - 1;
         strcpy(columns[1].name, "table");
         columns[1].size = 0;
         columns[1].type = types::string;
 
         // Permission bitfield of entry.
         columns[2].index = 2;
+        columns[2].name_length = sizeof("permissions") - 1;
         strcpy(columns[2].name, "permissions");
         columns[2].size = sizeof(uint8_t);
         columns[2].type = types::byte;
@@ -100,13 +113,18 @@ int main(int argc, char** args) {
                     server_config::root_password = (char*)malloc(21);
                     server_config::root_password[20] = 0;
 
-                    // Generate random bytes for the password.
-                    RAND_bytes((unsigned char*)server_config::root_password, 20);
+                    // Generate random password only for production build (optimised) to make debugging easier.
+                    #ifdef __OPTIMIZE__
+                        // Generate random bytes for the password.
+                        RAND_bytes((unsigned char*)server_config::root_password, 20);
 
-                    // Convert the bytes to ASCII codes from 0-Z.
-                    for (int i = 0; i < 20; i++) {
-                        server_config::root_password[i] = 48 + ((unsigned char)server_config::root_password[i] % 42);
-                    }
+                        // Convert the bytes to ASCII codes from 0-Z.
+                        for (int i = 0; i < 20; i++) {
+                            server_config::root_password[i] = 48 + ((unsigned char)server_config::root_password[i] % 42);
+                        }
+                    #else
+                        memcpy(server_config::root_password, "#DEBUG_ROOT_PASSWORD", 20);
+                    #endif
 
                     log("The session password for the root account is \033[47m%s\033[0m with the username being 'root'", server_config::root_password);
                 } else {
@@ -142,6 +160,8 @@ int main(int argc, char** args) {
 
     // Register exit handler.
     std::atexit(on_terminate);
+    std::signal(SIGINT, [](int signum) { exit(0); });
+    std::signal(SIGTERM, [](int signum) { exit(0); });
 
     // Create structures.
     socket_connections = new std::unordered_map<int, client_socket_data*>();
@@ -167,7 +187,7 @@ int main(int argc, char** args) {
     }
 
     // Open the internal permissions table.
-    new ActiveTable("--internal-table-permissions", true);
+    (*open_tables)["--internal-table-permissions"] = new ActiveTable("--internal-table-permissions", true);
 
     // Load the database accounts into memory.
     // Open the file containing the database accounts.

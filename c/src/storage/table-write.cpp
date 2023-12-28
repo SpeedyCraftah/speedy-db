@@ -1,261 +1,206 @@
+#include "compiled-query.h"
 #include "table.h"
-#include "../deps/xxh/xxhash.h"
+#include <cstdio>
+#include <unistd.h>
 
-int ActiveTable::erase_all_records(nlohmann::json& data, int dynamic_count, int limit) {
-    bool has_limit = limit == 0 ? false : true;
-
-    record_header* header = (record_header*)malloc(this->record_size);
-
-    int count = 0;
-
+void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
     this->op_mutex.lock();
 
-    // Seek to start.
-    fseek(this->data_handle, 0, SEEK_SET);
+    record_header* r_header = this->header_buffer;
+    
+    // Set default flags.
+    r_header->flags = record_flags::active | record_flags::dirty;
 
-    // Create a hash of all dynamic columns.
-    size_t dynamic_column_hashes[this->header.num_columns];
-    if (dynamic_count != 0) compute_dynamic_hashes(dynamic_column_hashes, data["where"]);
-
-    while (has_limit == false || limit != 0) {
-        size_t header_location = ftell(this->data_handle);
-
-        // Read the header of the record.
-        int fields_read = fread_unlocked(header, 1, this->record_size, this->data_handle);
-
-        // End of file has been reached as read has failed.
-        if (fields_read != this->record_size) {
-            free(header);
-            this->op_mutex.unlock();
-            
-            return count;
-        }
-
-        // If the block is empty, skip to the next one.
-        if ((header->flags & record_flags::active) == 0) {
-            continue;
-        }
-
-        // Check if record passes the conditions.
-        if (!validate_record_conditions(header, dynamic_column_hashes, data["where"])) continue;
-
-        // Record has passed the condition.
-
-        // Mark the record as deleted and mark for optimization.
-        header->flags &= ~record_flags::active;
-        header->flags |= record_flags::available_optimisation;
-
-        // Write the flag header.
-        size_t next_record = ftell(this->data_handle);
-        fseek(this->data_handle, header_location, SEEK_SET);
-        fwrite_unlocked(&header->flags, 1, sizeof(header->flags), this->data_handle);
-        fseek(this->data_handle, next_record, SEEK_SET);
-        
-        ++count;
-
-        if (has_limit) {
-            --limit;
-            if (limit == 0) break;
-        }
-    }
-
-    free(header);
-    this->op_mutex.unlock();
-
-    return count;
-}
-
-int ActiveTable::update_all_records(nlohmann::json& data, int dynamic_count, int limit) {
-    bool has_limit = limit == 0 ? false : true;
-
-    record_header* header = (record_header*)malloc(this->record_size);
-
-    int count = 0;
-
-    this->op_mutex.lock();
-
-    // Seek to start.
-    fseek(this->data_handle, 0, SEEK_SET);
-
-    // Create a hash of all dynamic columns.
-    size_t dynamic_column_hashes[this->header.num_columns];
-    if (dynamic_count != 0) compute_dynamic_hashes(dynamic_column_hashes, data["where"]);
-
-    while (has_limit == false || limit != 0) {
-        size_t header_location = ftell(this->data_handle);
-
-        // Read the header of the record.
-        int fields_read = fread_unlocked(header, 1, this->record_size, this->data_handle);
-
-        // End of file has been reached as read has failed.
-        if (fields_read != this->record_size) {
-            free(header);
-            this->op_mutex.unlock();
-            
-            return count;
-        }
-
-        // If the block is empty, skip to the next one.
-        if ((header->flags & record_flags::active) == 0) {
-            continue;
-        }
-
-        uint8_t* base_data = header->data;
-
-        // Check if record passes the conditions.
-        if (!validate_record_conditions(header, dynamic_column_hashes, data["where"])) continue;
-
-        // Record has passed the condition.
-
-        for (auto& item : data["changes"].items()) {
-            std::string column_n = item.key();
-            table_column& column = this->columns[column_n];
-            uint8_t* base = base_data + calculate_offset(column.index);
-
-            if (column.type == types::string) {
-                hashed_entry* entry = (hashed_entry*)base;
-                std::string column_d = item.value();
-
-                // Hash the dynamic data and store it.
-                entry->hash = XXH64(column_d.c_str(), column_d.length(), HASH_SEED);
-
-                // Update the length.
-                entry->size = column_d.length() + 1;
-
-                // Load the string header.
-                dynamic_record* column_header = (dynamic_record*)malloc(sizeof(dynamic_record));
-                
-                // Seek to string header.
-                fseek(this->dynamic_handle, entry->record_location, SEEK_SET);
-
-                // Read the string.
-                fread_unlocked(column_header, 1, sizeof(dynamic_record), this->dynamic_handle);
-
-                // If new data can be updated in the current block.
-                if (column_d.length() + 1 <= column_header->physical_size - sizeof(dynamic_record)) {
-                    // Write the new string.
-                    fwrite_unlocked(column_d.c_str(), 1, column_d.length() + 1, this->dynamic_handle);
-
-                    if (column_d.length() + 1 != column_header->physical_size - sizeof(dynamic_record)) {
-                        // Mark the record for possible optimisation.
-                        header->flags |= record_flags::available_optimisation;
-                    }
-                } else {
-                    // String needs to be relocated.
-
-                    // Seek to end.
-                    fseek(this->dynamic_handle, 0, SEEK_END);
-
-                    // Allocate space for new string block.
-                    dynamic_record* dynam_record = (dynamic_record*)malloc(sizeof(dynamic_record) + column_d.length() + 1);
-                    dynam_record->physical_size = sizeof(dynamic_record) + column_d.length() + 1;
-                    dynam_record->record_location = ftell(this->dynamic_handle);
-
-                    // Copy over the string.
-                    memcpy(dynam_record->data, column_d.c_str(), column_d.length() + 1);
-
-                    // Write the new data.
-                    fwrite_unlocked(dynam_record, 1, sizeof(dynamic_record) + column_d.length() + 1, this->dynamic_handle);
-
-                    // Update the record data.
-                    entry->record_location = dynam_record->record_location;
-
-                    free(dynam_record);
-                }
-
-                free(column_header);
-            } else if (column.type == types::byte) {
-                *(uint8_t*)(base) = item.value();
-            } else if (column.type == types::integer) {
-                *(int*)(base) = item.value();
-            } else if (column.type == types::float32) {
-                *(float*)(base) = item.value();
-            } else if (column.type == types::long64) {
-                *(long*)(base) = item.value();
-            }
-        }
-
-        // Write the updated data.
-        fseek(this->data_handle, header_location, SEEK_SET);
-        fwrite_unlocked(header, 1, this->record_size, this->data_handle);
-
-        ++count;
-
-        if (has_limit) {
-            --limit;
-            if (limit == 0) break;
-        }
-    }
-
-    free(header);
-    this->op_mutex.unlock();
-
-    return count;
-}
-
-void ActiveTable::insert_record(nlohmann::json& data) {
-    // Create a temporary buffer for the new record and set the flags.
-    record_header* header = (record_header*)malloc(this->record_size);
-    header->flags = record_flags::active | record_flags::dirty;
-
-    this->op_mutex.lock();
-
-    // Seek to the end.
+    // Seek to end of data file.
     fseek(this->data_handle, 0, SEEK_END);
 
-    for (int i = 0; i < this->header.num_columns; i++) {
-        // Fetch the column and find the data area for it.
+    for (uint32_t i = 0; i < this->header.num_columns; i++) {
         table_column& column = this->header_columns[i];
-        uint8_t* data_area = header->data + calculate_offset(column.index);
+        uint8_t* data_area = r_header->data + column.buffer_offset;
 
         // If the column is dynamic.
         if (column.type == types::string) {
-            std::string d = data[column.name];
-
+            query_compiler::StringInsertColumn& column_data = query->values[i].string;
             hashed_entry* entry = (hashed_entry*)data_area;
 
-            // Store the size.
-            entry->size = d.length() + 1;
+            size_t data_length = column_data.data.length();
 
-            // Hash the dynamic data and store it.
-            entry->hash = XXH64(d.c_str(), d.length(), HASH_SEED);
+            // Store the size and hash of string.
+            entry->size = data_length;
+            entry->hash = column_data.data_hash;
 
             // Store dynamic data location.
-            fseek(this->dynamic_handle, 0, SEEK_END);
-            entry->record_location = ftell(this->dynamic_handle);
+            entry->record_location = lseek(this->dynamic_handle, 0, SEEK_END);
 
-            dynamic_record* dynam_record = (dynamic_record*)malloc(sizeof(dynamic_record) + d.length() + 1);
+            // TODO - make this a preallocated buffer/stack instead depending on size?
+            dynamic_record* dynam_record = (dynamic_record*)malloc(sizeof(dynamic_record) + data_length);
             dynam_record->record_location = ftell(this->data_handle);
-            dynam_record->physical_size = d.length() + 1 + sizeof(dynamic_record);
-            
+            dynam_record->physical_size = data_length + sizeof(dynamic_record);
+
             // Write the data.
-            memcpy(dynam_record->data, d.c_str(), d.length() + 1);
+            // TODO - directly write string instead of copying to dynam_record? test performance
+            memcpy(dynam_record->data, column_data.data.data(), data_length);
 
             // Write the dynamic record.
-            fseek(this->dynamic_handle, 0, SEEK_END);
-            fwrite_unlocked(dynam_record, 1, sizeof(dynamic_record) + d.length() + 1, this->dynamic_handle);
-            fseek(this->dynamic_handle, 0, SEEK_SET);
+            write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + data_length);
 
             free(dynam_record);
-        } else {
-            if (column.type == types::byte) *(int8_t*)data_area = data[column.name];
-            else if (column.type == types::integer) *(int*)data_area = data[column.name];
-            else if (column.type == types::float32) *(float*)data_area = data[column.name];
-            else if (column.type == types::long64) *(long*)data_area = data[column.name];
+        } 
+        
+        // Column is numeric.
+        else {
+            query_compiler::NumericInsertColumn& column_data = query->values[i].numeric;
+            switch (column.type) {
+                case types::byte: *(int8_t*)data_area = *(int8_t*)&column_data.data; break;
+                case types::long64: *(long*)data_area = *(long*)&column_data.data; break;
+                
+                // Rest are 4 byte long values.
+                default: *(uint32_t*)data_area = *(uint32_t*)&column_data.data; break;
+            }
         }
     }
 
-    // Seek to the end.
-    fseek(this->data_handle, 0, SEEK_END);
-
     // Write to the file.
-    fwrite_unlocked(header, 1, this->record_size, this->data_handle);
-
-    // Seek back to the start.
-    fseek(this->data_handle, 0, SEEK_SET);
+    fwrite_unlocked(r_header, 1, this->record_size, this->data_handle);
 
     this->op_mutex.unlock();
+}
 
-    // Free memory buffer.
-    free(header);
+size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query) {
+    this->op_mutex.lock();
+
+    size_t count = 0;
+    for (auto it = this->bulk_begin(), end = this->bulk_end(); it != end; ++it) {
+        uint32_t available = *it;
+
+        bool changes_made = false;
+        for (uint32_t i = 0; i < available; i++) {
+            record_header* r_header = reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
+            
+            // If the block is empty, skip to the next one.
+            if ((r_header->flags & record_flags::active) == 0) {
+                continue;
+            }
+
+            // Check if record matches conditions.
+            if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
+                // Mark the record as deleted and mark for optimisation.
+                r_header->flags &= ~record_flags::active;
+                r_header->flags |= record_flags::available_optimisation;
+
+                count++;
+                changes_made = true;
+                if (query->limit != 0 && count == query->limit) break;
+            }
+        }
+
+        // Write the updated records in bulk with precise handle (if any).
+        if (changes_made) {
+            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, it.bulk_byte_offset());
+        }
+    }
+
+    fflush(this->data_handle);
+
+    this->op_mutex.unlock();
+    return count;
+}
+
+size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* query) {
+    this->op_mutex.lock();
+
+    size_t count = 0;
+    for (auto it = this->bulk_begin(), end = this->bulk_end(); it != end; ++it) {
+        uint32_t available = *it;
+
+        bool changes_made = false;
+        for (uint32_t i = 0; i < available; i++) {
+            record_header* r_header = reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
+            
+            // If the block is empty, skip to the next one.
+            if ((r_header->flags & record_flags::active) == 0) {
+                continue;
+            }
+
+            // Check if record matches conditions.
+            if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
+                for (uint32_t j = 0; j < query->changes_count; j++) {
+                    query_compiler::UpdateSet& generic_update = query->changes[j];
+                    table_column& column = this->header_columns[generic_update.generic.column_index];
+                    uint8_t* record_data = r_header->data + column.buffer_offset;
+
+                    switch (generic_update.generic.op) {
+                        case query_compiler::update_changes_op::NUMERIC_SET: {
+                            query_compiler::NumericUpdateSet& update = generic_update.numeric;
+                            
+                            switch (column.type) {
+                                case types::byte: *record_data = *(uint8_t*)&update.new_value; break;
+                                case types::float32: *(float*)record_data = *(float*)&update.new_value; break;
+                                case types::integer: *(int*)record_data = *(int*)&update.new_value; break;
+                                case types::long64: *(long*)record_data = *(long*)&update.new_value; break;
+                                default: {};
+                            }
+
+                            break;
+                        }
+
+                        case query_compiler::update_changes_op::STRING_SET: {
+                            query_compiler::StringUpdateSet& update = generic_update.string;
+                            hashed_entry* entry = (hashed_entry*)record_data;
+                            
+                            // Update the parameters.
+                            entry->hash = update.new_value_hash;
+                            entry->size = update.new_value.size();
+
+                            // Load the string header.
+                            dynamic_record column_header;
+
+                            // Read the string block header.
+                            pread(this->dynamic_handle, &column_header, sizeof(dynamic_record), entry->record_location);
+
+                            // If new data can fit in current block.
+                            if (update.new_value.size() <= column_header.physical_size - sizeof(dynamic_record)) {
+                                // Write the new string.
+                                pwrite(this->dynamic_handle, update.new_value.data(), update.new_value.size(), entry->record_location + sizeof(dynamic_record));
+                            } 
+                            
+                            // Needs relocation.
+                            else {
+                                // Allocate space for new string block.
+                                dynamic_record* dynam_record = (dynamic_record*)malloc(sizeof(dynamic_record) + update.new_value.size());
+                                dynam_record->physical_size = sizeof(dynamic_record) + update.new_value.size();
+                                dynam_record->record_location = lseek(this->dynamic_handle, 0, SEEK_END);
+
+                                // Copy over string.
+                                memcpy(dynam_record->data, update.new_value.data(), update.new_value.size());
+
+                                // Write the new data.
+                                write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + update.new_value.size());
+
+                                // Update the record data.
+                                entry->record_location = dynam_record->record_location;
+
+                                free(dynam_record);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                count++;
+                changes_made = true;
+                if (query->limit != 0 && count == query->limit) break;
+            }
+        }
+
+        if (changes_made) {
+            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, it.bulk_byte_offset());
+        }
+    }
+
+    fflush(this->data_handle);
+
+    this->op_mutex.unlock();
+    return count;
 }
