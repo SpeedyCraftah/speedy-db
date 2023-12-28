@@ -1,5 +1,4 @@
 #include "main.h"
-#include <exception>
 #include <openssl/rand.h>
 #include <string>
 #include <sys/stat.h>
@@ -22,7 +21,6 @@
 #include "misc/files.h"
 #include "storage/table.h"
 #include <csignal>
-#include <string>
 
 // Global variable holding the socket ID.
 int server_socket_id;
