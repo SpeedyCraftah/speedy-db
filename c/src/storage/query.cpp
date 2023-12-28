@@ -401,7 +401,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
-            std::string_view table_name_sv = d["password"];
+            std::string_view table_name_sv = d["table"];
             std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
 
             // If username is reserved by being called root.
@@ -433,11 +433,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            // Create the table permissions.
-            TablePermissions permissions;
-
-            // Deny the permissions by default by setting everything to 0.
-            memset(&permissions, 0, sizeof(permissions));
+            // Get existing permissions as base.
+            TablePermissions permissions = *get_table_permissions_for_account(table, t_account, false);
 
             // TODO - could use with constexpr too
             // Set user specified permissions.
