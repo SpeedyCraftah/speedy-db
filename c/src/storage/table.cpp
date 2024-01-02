@@ -82,12 +82,11 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
         query_builder::find_query<1> query(permissions_table);
         query.add_where_condition("table", query.string_equal_to(this->name));
 
-        rapidjson::Document accounts;
-        permissions_table->find_many_records(query.build(), accounts);
-
-        for (const auto& account : accounts.GetArray()) {
-            uint8_t permissions = account["permissions"].GetUint();
-            (*this->permissions)[account["index"].GetUint()] = *(TablePermissions*)&permissions;
+        for (auto it = permissions_table->specific_begin(query.build()); !it; ++it) {
+            auto record = *it;
+            
+            uint8_t permissions = record.get_numeric("permissions")->byte;
+            (*this->permissions)[record.get_numeric("index")->long64] = *(TablePermissions*)&permissions;
         }
     }
 
