@@ -128,6 +128,32 @@ class ActiveTable {
                 inline bool operator!=(const data_iterator& _unused) { return !this->complete; }
         };
 
+        // A wrapper around data_iterator, but allows for iterating over records which match the conditions only.
+        class specific_data_iterator {
+            query_compiler::CompiledFindQuery* query;
+            ActiveTable* table;
+            data_iterator iterator;
+            record_header* current_record;
+
+            inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : table(tbl), query(q), iterator(table->begin()), current_record(*iterator) {}
+            inline specific_data_iterator operator++() {
+                while (!this->iterator.complete) {
+                    record_header* record = *this->iterator;
+                    if (this->table->verify_record_conditions_match(record, query->conditions, query->conditions_count)) {
+                        
+                    }
+                    ++this->iterator;
+                }
+                return *this;
+            }
+
+            inline record_header* operator*() {
+                return this->current_record;
+            }
+
+            inline bool operator!=(const specific_data_iterator& _unused) { return !this->iterator.complete; }
+        };
+
         // Same as above but instead of iterating over individual records, only does by bulk.
         // Useful for erase/update operations.
         class bulk_data_iterator {
