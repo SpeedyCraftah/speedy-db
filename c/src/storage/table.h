@@ -130,6 +130,20 @@ class ActiveTable {
 
         // A wrapper around data_iterator, but allows for iterating over records which match the conditions only.
         class specific_data_iterator {
+            class record_wrapper {
+                public:
+                    ActiveTable* table;
+                    record_header* record;
+
+                    inline record_wrapper(ActiveTable* t, record_header* r) : table(t), record(r) {}
+                    
+                    inline NumericType* get_numeric(std::string_view column_name) {
+                        return (NumericType*)(record->data + table->columns.find(column_name)->second->buffer_offset);
+                    }
+
+                    // TODO - add operator to get strings
+            };
+
             public:
                 query_compiler::CompiledFindQuery* query;
                 ActiveTable* table;
@@ -137,7 +151,7 @@ class ActiveTable {
                 record_header* current_record;
 
                 inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : table(tbl), query(q), iterator(table->begin()), current_record(*iterator) {}
-                inline specific_data_iterator operator++() {
+                inline  __attribute__((always_inline)) specific_data_iterator operator++() {
                     while (!this->iterator.complete) {
                         record_header* record = *this->iterator;
                         if (this->table->verify_record_conditions_match(record, query->conditions, query->conditions_count)) {
@@ -149,8 +163,8 @@ class ActiveTable {
                     return *this;
                 }
 
-                inline record_header* operator*() {
-                    return this->current_record;
+                inline record_wrapper operator*() {
+                    return record_wrapper(table, this->current_record);
                 }
 
                 inline bool operator!() { return !this->iterator.complete; }
