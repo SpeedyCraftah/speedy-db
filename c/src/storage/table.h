@@ -130,28 +130,30 @@ class ActiveTable {
 
         // A wrapper around data_iterator, but allows for iterating over records which match the conditions only.
         class specific_data_iterator {
-            query_compiler::CompiledFindQuery* query;
-            ActiveTable* table;
-            data_iterator iterator;
-            record_header* current_record;
+            public:
+                query_compiler::CompiledFindQuery* query;
+                ActiveTable* table;
+                data_iterator iterator;
+                record_header* current_record;
 
-            inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : table(tbl), query(q), iterator(table->begin()), current_record(*iterator) {}
-            inline specific_data_iterator operator++() {
-                while (!this->iterator.complete) {
-                    record_header* record = *this->iterator;
-                    if (this->table->verify_record_conditions_match(record, query->conditions, query->conditions_count)) {
-                        
+                inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : table(tbl), query(q), iterator(table->begin()), current_record(*iterator) {}
+                inline specific_data_iterator operator++() {
+                    while (!this->iterator.complete) {
+                        record_header* record = *this->iterator;
+                        if (this->table->verify_record_conditions_match(record, query->conditions, query->conditions_count)) {
+                            current_record = record;
+                            ++this->iterator;
+                            break;
+                        } else ++this->iterator;
                     }
-                    ++this->iterator;
+                    return *this;
                 }
-                return *this;
-            }
 
-            inline record_header* operator*() {
-                return this->current_record;
-            }
+                inline record_header* operator*() {
+                    return this->current_record;
+                }
 
-            inline bool operator!=(const specific_data_iterator& _unused) { return !this->iterator.complete; }
+                inline bool operator!() { return !this->iterator.complete; }
         };
 
         // Same as above but instead of iterating over individual records, only does by bulk.
@@ -205,6 +207,10 @@ class ActiveTable {
 
         inline data_iterator end() {
             return data_iterator(nullptr);
+        }
+
+        inline specific_data_iterator specific_begin(query_compiler::CompiledFindQuery* query) {
+            return specific_data_iterator(this, query);
         }
 
         inline bulk_data_iterator bulk_begin() {
