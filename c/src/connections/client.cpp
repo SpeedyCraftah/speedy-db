@@ -90,10 +90,10 @@ void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_le
 
         // If packet can fit on the stack or has to be allocated.
         if (enc_length > MAX_STACK_PACKET_SIZE) {
+            buffer = (char*)malloc(enc_length);
+        } else {
             char buffer_s[enc_length];
             buffer = buffer_s;
-        } else {
-            buffer = (char*)malloc(enc_length);
         }
 
         // Set buffer for iovec.
