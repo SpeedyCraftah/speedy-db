@@ -24,8 +24,10 @@
 #include "../deps/rapidjson/stringbuffer.h"
 #include "../deps/simdjson/simdjson.h"
 #include "../storage/query-compiler.h"
+#include <sys/uio.h>
 
 #define MAX_PACKET_SIZE 104857600
+#define MAX_STACK_PACKET_SIZE 1048576
 
 // Define the error text list.
 const rapidjson::GenericStringRef<char> query_error_text[] = {
@@ -63,29 +65,39 @@ const rapidjson::GenericStringRef<char> query_error_text[] = {
 // packets being bundled together during transmission by including a header and terminator.
 
 // Sends an empty packet with size 0 which should be treated as a keep-alive test by the client.
-uint32_t ka_data = 0;
+const uint32_t ka_data = 0;
 int send_ka(client_socket_data* socket_data) {
     return send(socket_data->socket_id, (const char*)&ka_data, sizeof(uint32_t), 0);
 }
 
 // May be improved to reduce send calls.
 // TODO - group packets and send avoiding malloc and memcpy
+const uint8_t _zero = 0;
 void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_length) {
-    uint8_t* buffer;
     uint32_t length;
+
+    iovec packet[3];
+    packet[0] = {&length, sizeof(length)};
+    packet[2] = {(uint8_t*)&_zero, sizeof(_zero)};
 
     // If connection is encrypted.
     if (socket_data->encryption.enabled) {
         // Calculate the encryption length.
         size_t enc_length = crypto::aes256::encode_res_length(raw_length);
+        length = enc_length + 1;
 
-        length = enc_length;
+        char* buffer;
 
-        // Create buffer.
-        buffer = (uint8_t*)malloc(sizeof(uint32_t) + enc_length + 1);
+        // If packet can fit on the stack or has to be allocated.
+        if (enc_length > MAX_STACK_PACKET_SIZE) {
+            char buffer_s[enc_length];
+            buffer = buffer_s;
+        } else {
+            buffer = (char*)malloc(enc_length);
+        }
 
-        // Copy over length header.
-        *(uint32_t*)buffer = enc_length + 1;
+        // Set buffer for iovec.
+        packet[1] = {buffer, enc_length};
 
         // Encrypt the data.
         crypto::aes256::encrypt_buffer(
@@ -94,27 +106,17 @@ void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_le
             socket_data->encryption.aes_server_iv,
             data, raw_length, (char*)(buffer + sizeof(uint32_t))
         );
+
+        // Send buffer.
+        writev(socket_data->socket_id, packet, sizeof(packet) / sizeof(iovec));
+        if (enc_length > MAX_STACK_PACKET_SIZE) free(buffer);
     } else {
-        length = raw_length;
+        length = raw_length + 1;
+        packet[1] = {(void*)data, raw_length};
 
-        // Create buffer.
-        buffer = (uint8_t*)malloc(sizeof(uint32_t) + length + 1);
-
-        // Copy over length header.
-        *(uint32_t*)buffer = length + 1;
-        
-        // Copy over buffer.
-        memcpy(buffer + sizeof(uint32_t), data, length);
+        // Send buffer.
+        writev(socket_data->socket_id, packet, sizeof(packet) / sizeof(iovec));
     }
-
-    // Add terminator at the end.
-    buffer[length + sizeof(uint32_t)] = 0;
-
-    // Send buffer.
-    send(socket_data->socket_id, buffer, sizeof(uint32_t) + length + 1, 0);
-
-    // Free buffer.
-    free(buffer);
 }
 
 // TODO - speed this up.
