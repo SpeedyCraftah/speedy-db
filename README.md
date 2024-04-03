@@ -18,7 +18,8 @@ A database written in C++ and C which has been started due to me needing a proje
 - Write caching and deferring writes intelligently.
 - Indexing of tables to allow for near O(1) speed of queries regardless of the size of the table.
 - More data-types.
-- - Large data type used for optimised transfers and caching procedures of data in the range of KB-GB.
+  - Large data type used for optimised transfers and caching procedures of data in the range of KB-GB.
+  - Strings but with fixed lengths which are stored in the efficient and predictable record area for performance when size of a string is known beforehand. 
 - ACID compliance.
 - New data type - references to other records in same or different table.
 
