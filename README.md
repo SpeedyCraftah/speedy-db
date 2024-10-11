@@ -22,6 +22,7 @@ A database written in C++ and C which has been started due to me needing a proje
   - Strings but with fixed lengths which are stored in the efficient and predictable record area for performance when size of a string is known beforehand. 
 - ACID compliance.
 - New data type - references to other records in same or different table.
+- Query planner query which can be used to debug the execution plan of a query.
 
 # Supported platforms
 - Linux (no windows yet sorry).
