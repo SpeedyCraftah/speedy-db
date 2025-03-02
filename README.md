@@ -25,7 +25,8 @@ A database written in C++ and C which has been started due to me needing a proje
 - Query planner query which can be used to debug the execution plan of a query.
 
 # Supported platforms
-- Linux (no windows yet sorry).
+- Linux X86 (no windows yet sorry).
+  - ARM64 should work fine but there may be compatibility issues with RapidJSON & slight performance drops with xxHash & simdjson. 
 - Little-endian byte order CPU (big-endian may work just fine but this has been untested).
 
 # Bugs
