@@ -1,3 +1,5 @@
+**Note:** This is a public mirror. Not much has changed however; issues & pull requests here are still accepted.
+
 # Speedy DB
 A database written in C++ and C which has been started due to me needing a project for my A-Level computer science NEA and thought this would be a great project and challenge.
 
