@@ -135,8 +135,13 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             }
             std::string name = {name_sv.begin(), name_sv.end()};
 
+            // If name is invalid.
+            if (!misc::name_string_legal(name)) {
+                send_query_error(socket_data, nonce, query_error::params_invalid);
+                return;
+            }
+
             // If name starts with a reserved sequence.
-            // TODO - check for vulnerabilities.
             if (name.starts_with("--internal")) {
                 send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
@@ -200,9 +205,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            if (
-                name.length() > 32 || name.length() < 2 || !misc::name_string_legal(name)
-            ) {
+            if (!misc::name_string_legal(name)) {
                 send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
@@ -283,7 +286,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             std::string password = {password_sv.begin(), password_sv.end()};
 
             // If username or passwords are too short or are too long.
-            if (username.length() > 32 || username.length() < 2 || !misc::name_string_legal(username) || password.length() > 100 || password.length() < 2) {
+            if (!misc::name_string_legal(username) || password.length() > 100 || password.length() < 2) {
                 send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
@@ -523,7 +526,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Open the data directory.
             DIR* dir;
             struct dirent* ent;
-            dir = opendir("./data");
+            dir = opendir(server_config::data_directory.c_str());
 
             // If directory could not be opened.
             if (dir == NULL) {
