@@ -48,6 +48,7 @@ All parameters are specified without dashes (e.g. `./bin password=hello_world`).
 - `force-encrypted-traffic` - allows you to force connecting clients to connect with encryption enabled.
 - `port=[your_port]` - allows you to set the listening port for the database.
 - `max-connections=[maximum_connections]` - allows you to set the maximum amount of concurrent connections.
+- `data-directory=[path]` - allows you to set a custom data directory location (default `./data`).
 
 # What this is not
 An enterprise-level database which is reliable and can handle very high traffic reliably.
