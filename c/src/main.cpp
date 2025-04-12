@@ -101,7 +101,7 @@ int main(int argc, char** args) {
                         server_config::max_connections = std::stoi(value);
                     } else if (name == "port") {
                         server_config::port = std::stoi(value);
-                    } else if (arg == "data-directory") {
+                    } else if (name == "data-directory") {
                         std::string data_directory = value.ends_with('/') ? value : value.append("/");
                         server_config::data_directory = data_directory;
                     } else {
