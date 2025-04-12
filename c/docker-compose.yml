@@ -1,0 +1,7 @@
+services:
+  speedy-db:
+    image: localhost/speedy-db
+    ports:
+      - "4546:4546"  # Expose port 4546 on the host.
+    volumes:
+      - /var/lib/speedy-db:/data:rw  # Mount the DB data directory.
