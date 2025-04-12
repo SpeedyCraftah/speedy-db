@@ -38,6 +38,7 @@ bool server_config::force_encrypted_traffic = false;
 bool server_config::root_account_enabled = false;
 unsigned int server_config::max_connections = 10;
 char* server_config::root_password = nullptr;
+std::string server_config::data_directory = "./data/";
 
 void on_terminate() {
     log("Killing socket and exiting");
@@ -53,45 +54,6 @@ void on_terminate() {
 }
 
 int main(int argc, char** args) {
-    // Check for first ever run.
-    if (!folder_exists("./data")) {
-        log("First boot detected - welcome to SpeedyDB");
-        
-        // Create data folder with standard R/W permissions.
-        mkdir("./data", 0777);
-
-        // Create accounts storage file.
-        fclose(fopen("./data/accounts.bin", "a"));
-
-        // Create the table permissions table which holds permission data on all tables.
-
-        table_column columns[3];
-
-        // Unique identifier of permission entry.
-        columns[0].index = 0;
-        columns[0].name_length = sizeof("index") - 1;
-        strcpy(columns[0].name, "index");
-        columns[0].size = sizeof(size_t);
-        columns[0].type = types::long64;
-
-        // Name of target table.
-        columns[1].index = 1;
-        columns[1].name_length = sizeof("table") - 1;
-        strcpy(columns[1].name, "table");
-        columns[1].size = 0;
-        columns[1].type = types::string;
-
-        // Permission bitfield of entry.
-        columns[2].index = 2;
-        columns[2].name_length = sizeof("permissions") - 1;
-        strcpy(columns[2].name, "permissions");
-        columns[2].size = sizeof(uint8_t);
-        columns[2].type = types::byte;
-
-        // Create account table permissions table.
-        create_table("--internal-table-permissions", columns, 3);
-    }
-
     // If the user provided some arguments.
     if (argc > 1) {
         // Iterate through all arguments.
@@ -139,6 +101,9 @@ int main(int argc, char** args) {
                         server_config::max_connections = std::stoi(value);
                     } else if (name == "port") {
                         server_config::port = std::stoi(value);
+                    } else if (arg == "data-directory") {
+                        std::string data_directory = value.ends_with('/') ? value : value.append("/");
+                        server_config::data_directory = data_directory;
                     } else {
                         logerr("One or more command line arguments provided are incorrect.");
                         exit(1);
@@ -154,6 +119,47 @@ int main(int argc, char** args) {
     if (server_config::root_account_enabled) {
         logwarn("The root account is enabled with the temporary password being printed to the logs which is unsafe");
         logwarn("Make sure to disable the root account after creating a user account");
+    }
+
+    // Check for first run or incomplete data directory.
+    std::string account_bin_path = std::string(server_config::data_directory).append("accounts.bin");
+    bool data_directory_exists = folder_exists(server_config::data_directory.c_str());
+    if (!data_directory_exists || !file_exists(account_bin_path.c_str())) {
+        log("First boot detected - welcome to SpeedyDB");
+        
+        // Create data folder with standard R/W permissions.
+        if (!data_directory_exists) mkdir(server_config::data_directory.c_str(), 0777);
+
+        // Create accounts storage file.
+        fclose(fopen(account_bin_path.c_str(), "a"));
+
+        // Create the table permissions table which holds permission data on all tables.
+
+        table_column columns[3];
+
+        // Unique identifier of permission entry.
+        columns[0].index = 0;
+        columns[0].name_length = sizeof("index") - 1;
+        strcpy(columns[0].name, "index");
+        columns[0].size = sizeof(size_t);
+        columns[0].type = types::long64;
+
+        // Name of target table.
+        columns[1].index = 1;
+        columns[1].name_length = sizeof("table") - 1;
+        strcpy(columns[1].name, "table");
+        columns[1].size = 0;
+        columns[1].type = types::string;
+
+        // Permission bitfield of entry.
+        columns[2].index = 2;
+        columns[2].name_length = sizeof("permissions") - 1;
+        strcpy(columns[2].name, "permissions");
+        columns[2].size = sizeof(uint8_t);
+        columns[2].type = types::byte;
+
+        // Create account table permissions table.
+        create_table("--internal-table-permissions", columns, 3);
     }
 
     // Register exit handler.
@@ -189,7 +195,7 @@ int main(int argc, char** args) {
 
     // Load the database accounts into memory.
     // Open the file containing the database accounts.
-    database_accounts_handle = fopen("./data/accounts.bin", "r+b");
+    database_accounts_handle = fopen(account_bin_path.c_str(), "r+b");
     if (database_accounts_handle == NULL) {
         logerr("Could not open the database accounts file");
         exit(1);

@@ -25,4 +25,5 @@ namespace server_config {
     extern unsigned int max_connections;
     extern bool root_account_enabled;
     extern char* root_password;
+    extern std::string data_directory;
 };
