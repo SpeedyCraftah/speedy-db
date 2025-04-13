@@ -15,6 +15,23 @@ A database written in C++ and C which has been started due to me needing a proje
 - Password protection enforced on connecting clients which also has a back-off period to prevent brute-force attacks.
 - Handles high traffic very well.
 
+# Security / Containerization
+Since I feel quite guilty about some of the code design decisions I made here, I've created 2 options for locking the database down and limiting the impact of a zero-day attack on the database.
+
+## Option 1: Docker / Podman Container
+I've added a `Dockerfile` in `~/c/` which lets you setup a minimal rootless Docker/Podman container running under Alpine Linux, I would heavily recommend running this under Podman which has much better rootless containerization than Docker, nothing that the database does needs root access, and since Docker installations typically run all containers as root, this is a grave security risk.
+- To build the image simply `cd` into the `~/c/` directory and run `(docker/podman) build -t speedy-db .`.
+- The `docker-compose.yml` file contains a typical setup which you can run using `(docker/podman)-compose up --detach`, which mounts a data directory at `/var/lib/speedy-db` (make sure the directory exists).
+  - **Note:** The rootless user runs under UID `1000`, to give the underlying containerized user access to the data directory, allocate the namespace mount for the user running the container in the `/etc/subuid` file (if you are running rootless) and `chown` the data directory to be owned by the `1000` UID offset by the start of your allocated namespace mount (if you have no idea what any of this means, if you paste it into an LLM it will tell you exactly what to do).
+
+## Option 2: AppArmor Profile (MAC)
+I've added an AppArmor profile in `~/c/` which is locked down to access only the resources that the database needs and will make the database much more secure should anything happen, AA can completely thwart an otherwise possible attack attempt with a good profile.
+- Copy the file in `~/c/production.profile` to `/etc/apparmor.d/`.
+- Modify the profile to point to the DB binary (otherwise the profile assumes the DB binary is in `/usr/lib/speedy-db/production`).
+- Modify the profile to point to the correct DB data directory (otherwise the profile assumes the data directory is at `/var/lib/speedy-db/`).
+- Enable the profile using `aa-enforce /etc/apparmor.d/production.profile`.
+- You are done.
+
 # Upcoming features
 - Caching of frequently queried records to reduce the amount of times needed to query the disk.
 - Write caching and deferring writes intelligently.
@@ -108,4 +125,3 @@ const users = await db.table("users").findMany({
 This was originally meant to be written in C; however I have opted into using C++ as it allows for better looking and maintainable code as well as built-in structures and methods which would be a hassle to implement in C.
 I have also opted into using C APIs for most things such as TCP and disk access as they are less complicated and result in more than 2x better performance than equivalent C++ APIs.
 I also had to write this entire README twice as I accidentally clicked off when writing it on GitHub.
- 
