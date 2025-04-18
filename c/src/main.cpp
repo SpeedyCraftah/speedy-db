@@ -125,7 +125,7 @@ int main(int argc, char** args) {
     }
 
     // Check for first run or incomplete data directory.
-    std::string account_bin_path = std::string(server_config::data_directory).append("accounts.bin");
+    std::string account_bin_path = server_config::data_directory + "accounts.bin";
     bool data_directory_exists = folder_exists(server_config::data_directory.c_str());
     if (!data_directory_exists || !file_exists(account_bin_path.c_str())) {
         log("First boot detected - welcome to SpeedyDB");

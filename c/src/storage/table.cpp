@@ -24,7 +24,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     }
 
     // Create the data paths.
-    std::string path = server_config::data_directory.append(table_name);
+    std::string path = server_config::data_directory + table_name;
     std::string meta_path = path + "/meta.bin";
     std::string data_path = path + "/data.bin";
     std::string dynamic_path = path + "/dynamic.bin";
@@ -161,7 +161,7 @@ void create_table(const char* table_name, table_column* columns, int length) {
     misc_op_mutex.lock();
 
     // Create the data path.
-    std::string path = std::string(server_config::data_directory).append(name_string);
+    std::string path = server_config::data_directory + name_string;
     mkdir(path.c_str(), 0777);
 
     // Append a slash for future paths.
@@ -222,7 +222,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
 
     // Create temporary paths.
     // Create the data path.
-    std::string path = std::string(server_config::data_directory).append(table->header.name).append("/");
+    std::string path = server_config::data_directory + table->header.name + "/";
     
     // Create paths.
     std::string old_data_path = std::string(path).append("data.bin");
