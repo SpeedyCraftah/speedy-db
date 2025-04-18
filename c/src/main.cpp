@@ -54,6 +54,9 @@ void on_terminate() {
 }
 
 int main(int argc, char** args) {
+    // Enable terminal buffering (for systemctl).
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     // If the user provided some arguments.
     if (argc > 1) {
         // Iterate through all arguments.
