@@ -165,12 +165,19 @@ void ActiveTable::assemble_record_data_to_json(record_header* record, size_t inc
 bool ActiveTable::find_one_record(query_compiler::CompiledFindQuery* query, rapidjson::Document& result) {
     this->op_mutex.lock();
 
+    size_t offset_counter = query->offset;
     for (record_header* r_header : *this) {
         // If the block is empty, skip to the next one.
         if ((r_header->flags & record_flags::active) == 0) continue;
 
         // Check if record matches conditions.
         if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
+            // Ignore matched records until offset runs out.
+            if (offset_counter != 0) {
+                --offset_counter;
+                continue;
+            }
+
             assemble_record_data_to_json(r_header, query->columns_returned, result);
 
             this->op_mutex.unlock();
@@ -186,12 +193,19 @@ void ActiveTable::find_many_records(query_compiler::CompiledFindQuery* query, ra
     this->op_mutex.lock();
     result.SetArray();
 
+    size_t offset_counter = query->offset;
     for (record_header* r_header : *this) {
         // If the block is empty, skip to the next one.
         if ((r_header->flags & record_flags::active) == 0) continue;
 
         // Check if record matches conditions.
         if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
+            // Ignore matched records until offset runs out.
+            if (offset_counter != 0) {
+                --offset_counter;
+                continue;
+            }
+
             rapidjson::Document record(&result.GetAllocator());
             assemble_record_data_to_json(r_header, query->columns_returned, record);
 

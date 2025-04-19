@@ -163,6 +163,9 @@ namespace query_compiler {
         // TODO - check before checking for limit, performance penalty on invalid elements.
         if (query_object["limit"].get(compiled_query->limit) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
+        // Check for record offset.
+        if (query_object["offset"].get(compiled_query->offset) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
         // Check for seek direction.
         // TODO - change query setting to boolean.
         // TODO - check before checking for direction, performance penalty on invalid elements.

@@ -104,6 +104,7 @@ namespace query_compiler {
 
         bool seek_direction = true; // false = end-start, true = start-end
         size_t limit = 0;
+        size_t offset = 0;
         size_t columns_returned = SIZE_MAX;
     };
 

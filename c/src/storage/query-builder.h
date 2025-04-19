@@ -81,17 +81,23 @@ namespace query_builder {
         public:
             find_query(ActiveTable* t) { this->table = t; }
 
+            inline void set_offset(size_t offset) {
+                this->offset = offset;
+            }
+
             CompiledFindQuery* build() {
                 this->query.conditions = this->conditions;
                 this->query.conditions_count = this->conditions_i;
                 this->query.limit = this->limit;
                 this->query.seek_direction = this->seek_direction;
+                this->query.offset = this->offset;
 
                 return &this->query;
             }
 
         private:
             CompiledFindQuery query;
+            size_t offset = 0;
     };
 
     template<size_t where_count, size_t updates_count>

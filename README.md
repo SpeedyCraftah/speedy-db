@@ -93,7 +93,7 @@ db.on("fatalError", d => {
 // Create table - catch to prevent error if table already exists.
 await db.table("users").create({
     name: { type: "string" },
-	age: { type: "byte" },
+	  age: { type: "byte" },
     balance: { type: "float" }
 }).catch(() => null);
 
@@ -115,7 +115,9 @@ const users = await db.table("users").findMany({
     // Start looking for data only after this condition is satisfied - useful for finding data before/after a certain date.
     seek_where: {},
     // Specify the direction the database searches for records (1 = start-end, -1 = end-start) - useful for ordering data a certain way.
-    seek_direction: 1
+    seek_direction: 1,
+    // Skip 1 matched record before beginning to return records (does not count towards limit).
+    offset: 1
 }); // [{ name: "henry", balance: 21.83 }, { name: "henry", balance: 238.0 }, ...]
 
 // More examples coming soon!
