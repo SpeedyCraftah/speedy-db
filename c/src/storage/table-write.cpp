@@ -96,7 +96,7 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
 
         // Write the updated records in bulk with precise handle (if any).
         if (changes_made) {
-            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, it.bulk_byte_offset());
+            pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
         }
     }
 
@@ -195,7 +195,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
         }
 
         if (changes_made) {
-            pwrite(this->data_handle_precise, this->header_buffer, BULK_HEADER_READ_COUNT * this->record_size, it.bulk_byte_offset());
+            pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
         }
     }
 
