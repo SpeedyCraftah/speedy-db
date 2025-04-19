@@ -181,13 +181,14 @@ class ActiveTable {
 
                 inline bulk_data_iterator(ActiveTable* tbl) : table(tbl) {}
                 bulk_data_iterator operator++() {
+                    records_byte_offset += buffer_records_available * table->record_size;
+                    
                     if (buffer_records_available != BULK_HEADER_READ_COUNT) {
                         complete = true;
                         return *this;
                     }
                     
                     buffer_records_available = fread_unlocked(table->header_buffer, table->record_size, BULK_HEADER_READ_COUNT, table->data_handle);
-                    records_byte_offset += buffer_records_available * table->record_size;
                     return *this;
                 }
 
