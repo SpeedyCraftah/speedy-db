@@ -236,10 +236,8 @@ namespace query_compiler {
                 case types::string: {
                     if (value.type() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
-                    std::string_view data = value.raw_json();
-                    data.remove_prefix(1);
-                    data.remove_suffix(1);
-
+                    std::string_view data = value.get_string();
+                    
                     StringInsertColumn& val = columns_inserted[column->index].string;
                     val.data = data;
                     val.data_hash = XXH64(data.data(), data.length(), HASH_SEED);
@@ -348,9 +346,7 @@ namespace query_compiler {
                 case types::string: {
                     if (value_type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
-                    std::string_view data = value.raw_json();
-                    data.remove_prefix(1);
-                    data.remove_suffix(1);
+                    std::string_view data = value.get_string();
 
                     StringUpdateSet& update = updates[updates_count].string;
                     update.op = update_changes_op::STRING_SET;
