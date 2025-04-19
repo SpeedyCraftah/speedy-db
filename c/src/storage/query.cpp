@@ -346,8 +346,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
-            std::string_view password_sv = d["password"];
-            std::string password = {password_sv.begin(), password_sv.end()};
 
             // Find the account.
             auto account_lookup = database_accounts->find(username);
