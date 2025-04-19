@@ -129,7 +129,7 @@ namespace query_compiler {
                         // Correctly cast binary values based on type.
                         switch (value.get_number_type()) {
                             case number_type::floating_point_number: cmp.comparator.float32 = (float)value.get_double(); break;
-                            case number_type::signed_integer: cmp.comparator.int32 = (int)value.get_int64(); break;
+                            case number_type::signed_integer: cmp.comparator.long64 = (long)value.get_int64(); break;
                             default: cmp.comparator.unsigned64_raw = value.get_uint64(); break;
                         }
 
