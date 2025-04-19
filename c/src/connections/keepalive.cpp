@@ -27,7 +27,13 @@ void* keepalive_thread_handle(void* args) {
             else if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - socket.second->last_packet_time > 60000) {
                 // Send an empty keep-alive message which should be sent back by the client.
                 // Which would confirm the connection is still alive, just silent.
-                send_ka(socket.second);
+                int ka_result = send_ka(socket.second);
+                if (ka_result == -1) {
+                    logerr("Socket with handle %d has been terminated due to a broken pipe", socket.second->socket_id);
+                    // Terminate the socket as the kernel has detected the handle to be dead.
+                    socket_to_delete = socket.second;
+                    break;
+                }
             }
         }
 

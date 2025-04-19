@@ -64,7 +64,7 @@ const rapidjson::GenericStringRef<char> query_error_text[] = {
 
 // Sends an empty packet with size 0 which should be treated as a keep-alive test by the client.
 uint32_t ka_data = 0;
-int send_ka(client_socket_data* socket_data) {
+ssize_t send_ka(client_socket_data* socket_data) {
     return send(socket_data->socket_id, (const char*)&ka_data, sizeof(uint32_t), 0);
 }
 
