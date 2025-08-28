@@ -1,4 +1,5 @@
 #include "query-compiler.h"
+#include "compiled-query.h"
 #include "table.h"
 #include <memory>
 #include <string_view>
@@ -42,6 +43,7 @@ namespace query_compiler {
             if (type == json_type::object) {
                 simdjson::ondemand::object cmp_object = value.get_object();
 
+                // String advanced queries.
                 // String key compare operations are expensive, only check for possible combinations.
                 if (column->type == types::string) {
                     for (auto advanced_condition : cmp_object) {
@@ -62,12 +64,33 @@ namespace query_compiler {
                             cmp.op = where_compare_op::STRING_CONTAINS;
                             cmp.column_index = column->index;
                             cmp.comparator = comparator;
-                        } else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
+                        } 
+                        
+                        else if (advanced_key == "equal_to") {
+                            // We don't get type checking with raw_json, so manually do it.
+                            if (advanced_value.type().value() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+                                
+                            std::string_view comparator = advanced_value.raw_json();
+
+                            // Slice out quotes from beginning and end.
+                            comparator.remove_prefix(1);
+                            comparator.remove_suffix(1);
+
+                            cmp.op = where_compare_op::STRING_EQUAL;
+                            cmp.column_index = column->index;
+                            cmp.comparator = comparator;
+                            cmp.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
+                        }
+                        
+                        else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         conditions_count++;
                         if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
                     }
-                } else {
+                } 
+                
+                // Numeric advanced queries.
+                else {
                     NumericQueryComparison& cmp = conditions[conditions_count].numeric;
 
                     // TODO - shorten LT/LG ops to >/< for efficiency ?
@@ -82,6 +105,7 @@ namespace query_compiler {
                         else if (advanced_key == "greater_than") cmp.op = where_compare_op::NUMERIC_GREATER_THAN;
                         else if (advanced_key == "less_than_equal_to") cmp.op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
                         else if (advanced_key == "greater_than_equal_to") cmp.op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
+                        else if (advanced_key == "equal_to") cmp.op = where_compare_op::NUMERIC_EQUAL;
                         else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         switch (column->type) {
