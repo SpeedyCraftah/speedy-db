@@ -42,8 +42,8 @@ types type_string_to_int(std::string_view& type) {
 void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::nonce, nonce, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::data, data, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -51,7 +51,7 @@ void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::
 void send_query_response(client_socket_data* socket_data, int nonce) {
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::nonce, nonce, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -59,14 +59,14 @@ void send_query_response(client_socket_data* socket_data, int nonce) {
 void send_query_error(client_socket_data* socket_data, int nonce, query_error error) {
     rapidjson::Document data_object;
     data_object.SetObject();
-    data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_code), error, data_object.GetAllocator());
-    if (socket_data->config.error_text) data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_text), query_error_text[error], data_object.GetAllocator());
+    data_object.AddMember(rj_query_keys::error_code, error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[error], data_object.GetAllocator());
 
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data_object, response_object.GetAllocator());
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.error), 1, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::nonce, nonce, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::data, data_object, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::error, 1, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -75,14 +75,14 @@ void send_query_error(client_socket_data* socket_data, int nonce, query_error er
 void send_query_error(client_socket_data* socket_data, int nonce, query_compiler::error error) {
     rapidjson::Document data_object;
     data_object.SetObject();
-    data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_code), error, data_object.GetAllocator());
-    if (socket_data->config.error_text) data_object.AddMember(rapidjson_string_view(socket_data->key_strings.error_text), query_compiler::error_text[error], data_object.GetAllocator());
+    data_object.AddMember(rj_query_keys::error_code, error, data_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rj_query_keys::error_text, query_compiler::error_text[error], data_object.GetAllocator());
 
     rapidjson::Document response_object;
     response_object.SetObject();
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.nonce), nonce, response_object.GetAllocator());
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.data), data_object, response_object.GetAllocator());
-    response_object.AddMember(rapidjson_string_view(socket_data->key_strings.error), 1, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::nonce, nonce, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::data, data_object, response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::error, 1, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -95,17 +95,16 @@ std::mutex table_open_mutex;
 // TODO - remove op-o conversion in js
 void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
     int socket_id = socket_data->socket_id;
-    bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
     DatabaseAccount* account = socket_data->account;
 
     size_t op;
     simdjson::ondemand::object d;
 
-    if (data["op"].get(op) != simdjson::error_code::SUCCESS) {
+    if (data[sj_query_keys::op].get(op) != simdjson::error_code::SUCCESS) {
         send_query_error(socket_data, nonce, query_error::op_invalid);
         return;
-    } else if (data[socket_data->key_strings.sj_data].get(d) != simdjson::error_code::SUCCESS) {
+    } else if (data[sj_query_keys::data].get(d) != simdjson::error_code::SUCCESS) {
         send_query_error(socket_data, nonce, query_error::data_invalid);
         return;
     }

@@ -8,6 +8,21 @@
 #include "../deps/simdjson/simdjson.h"
 #include "../deps/rapidjson/document.h"
 
+// Rapid JSON query keys.
+struct rj_query_keys {
+    inline static const rapidjson::GenericStringRef<char> nonce = "n";
+    inline static const rapidjson::GenericStringRef<char> data = "d";
+    inline static const rapidjson::GenericStringRef<char> error = "e";
+    inline static const rapidjson::GenericStringRef<char> error_code = "c";
+    inline static const rapidjson::GenericStringRef<char> error_text = "t";
+};
+
+// SIMD JSON query keys.
+struct sj_query_keys {
+    inline static constexpr const char* data = "d";
+    inline static constexpr const char* op = "o";
+};
+
 struct client_socket_data {
     struct version_t {
         int major;
@@ -15,27 +30,12 @@ struct client_socket_data {
     };
 
     struct config_t {
-        // Removes unnecessary bytes from the element names of all transmissions and
-        // shortens them to a single byte equivelant (plus a number if duplicate)
-        // in an effort to reduce network traffic.
-        // Client sent JSON will also be expected to make use of short attributes.
-        bool short_attr = false; // short_attributes
-
         // Removes the long and detailed 'text' data entry that gets sent with every error
         // since it is largely pointless as the errors can be hardcoded + the relevant code
         // always gets sent. This should be disabled in production and only used during testing.
-        bool error_text = true; // error_text
+        bool error_text = true;
     };
 
-    struct key_strings_t {
-        std::string_view nonce = "nonce";
-        std::string_view data = "data";
-        std::string_view error = "error";
-        std::string_view error_code = "code";
-        std::string_view error_text = "text";
-
-        std::string_view sj_data = "data";
-    };
 
     struct encryption_t {
         bool enabled = false;
@@ -50,7 +50,6 @@ struct client_socket_data {
     int socket_id;
     char address[16];
     config_t config;
-    key_strings_t key_strings;
     version_t version;  
     uint64_t last_packet_time = 0;
     DatabaseAccount* account;

@@ -50,89 +50,95 @@ module.exports = class SpeedDBClient extends EventEmitter {
     account(username) {
         return {
             create: (data) => {
-                return this._send_query({ op: 10, data: { username, ...data } });
+                return this._send_query({ o: 10, d: { username, ...data } });
             },
             
             delete: () => {
-                return this._send_query({ op: 11, data: { username } });
+                return this._send_query({ o: 11, d: { username } });
             },
             
             get_permissions: () => {
-                return this._send_query({ op: 16, data: { username } });
+                return this._send_query({ o: 16, d: { username } });
             }
         };
     }
 
     no_operation() {
-        return this._send_query({ op: 17, data: {} });
+        return this._send_query({ o: 17, d: {} });
     }
 
     get_all_table_names() {
-        return this._send_query({ op: 14, data: {} });
+        return this._send_query({ o: 14, d: {} });
     }
 
     get_all_account_names() {
-        return this._send_query({ op: 15, data: {} });
+        return this._send_query({ o: 15, d: {} });
     }
 
     table(name) {
         return {
             create: (columns) => {
-                return this._send_query({ op: 0, data: { columns, name } });
+                return this._send_query({ o: 0, d: { columns, name } });
             },
 
             open: () => {
-                return this._send_query({ op: 1, data: { table: name } });
+                return this._send_query({ o: 1, d: { table: name } });
             },
 
             describe: () => {
-                return this._send_query({ op: 2, data: { table: name } });
+                return this._send_query({ o: 2, d: { table: name } });
             },
 
             insert: (columns) => {
-                return this._send_query({ op: 3, data: { table: name, columns } });
+                return this._send_query({ o: 3, d: { table: name, columns } });
             },
 
             findOne: (data) => {
-                return this._send_query({ op: 4, data: { table: name, ...data } });
+                return this._send_query({ o: 4, d: { table: name, ...data } });
             },
 
             findMany: (data) => {
-                return this._send_query({ op: 5, data: { table: name, ...data } });
+                return this._send_query({ o: 5, d: { table: name, ...data } });
             },
 
             eraseMany: (data) => {
-                return this._send_query({ op: 6, data: { table: name, ...data } });
+                return this._send_query({ o: 6, d: { table: name, ...data } });
             },
 
             updateMany: (data) => {
-                return this._send_query({ op: 7, data: { table: name, ...data } });
+                return this._send_query({ o: 7, d: { table: name, ...data } });
             },
 
             close: () => {
-                return this._send_query({ op: 8, data: { table: name } });
+                return this._send_query({ o: 8, d: { table: name } });
             },
 
             rebuild: (data) => {
-                return this._send_query({ op: 9, data: { table: name } });
+                return this._send_query({ o: 9, d: { table: name } });
             },
 
             set_permissions_for: (account, permissions) => {
-                return this._send_query({ op: 12, data: { table: name, username: account, permissions } });
+                return this._send_query({ o: 12, d: { table: name, username: account, permissions } });
             },
 
             get_permissions_for: (account) => {
-                return this._send_query({ op: 13, data: { table: name, username: account } });
+                return this._send_query({ o: 13, d: { table: name, username: account } });
             }
         };
     }
 
     _send_query(data) {
+        // Generate a random unique identifier.
+        let nonce;
+        do {
+            nonce = randomInt(0, 999999999);
+        } while (nonce in this.activeQueries);
+
+        // Reserve the nonce value.
+        this.activeQueries[nonce] = null;
+        data["n"] = nonce;
+
         return new Promise(async (resolve, reject) => {
-            // Generate a random unique identifier.
-            const nonce = randomInt(0, 999999999);
-            data["nonce"] = nonce;
-            
             // Transform the data into a compliant format.
             let d = Buffer.from(JSON.stringify(data));
 
@@ -169,24 +175,28 @@ module.exports = class SpeedDBClient extends EventEmitter {
         else data = JSON.parse(raw_data.toString());
 
         // If data has no nonce, it is a global message.
-        if (!data.nonce) {
+        if (!data.n) {
             // Global errors are always fatal.
-            if (data.error) {
-                this.emit("fatalError", data.data);
+            if (data.e) {
+                this.emit("fatalError", data.d);
             }
         }
 
-        const query = this.activeQueries[data.nonce];
+        const query = this.activeQueries[data.n];
         if (!query) return;
 
         clearTimeout(query.timeout);
 
-        if (data.error) query.reject(data.data.text);
-        else query.resolve(data.data);
+        if (data.e) query.reject(data.d.t);
+        else query.resolve(data.d);
 
-        delete this.activeQueries[data.nonce];
+        delete this.activeQueries[data.n];
     }
 
+    /**
+     * 
+     * @param {Buffer<ArrayBufferLike>} data 
+     */
     _on_data(data) {
         if (!this.buffer) {
             // Read the length of the buffer.
@@ -199,7 +209,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
                 
                 // If packet has more data.
                 if (data.length > 4) {
-                    this._on_data(data.slice(4));
+                    this._on_data(data.subarray(4));
                 }
                 
                 return;
@@ -207,11 +217,11 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
             // If the entire packet is present.
             if (data.length >= length + 4) {
-                this._on_message(data.slice(4, length + 3));
+                this._on_message(data.subarray(4, length + 3));
 
                 // If there is more data.
                 if (data.length != length + 4) {
-                    this._on_data(data.slice(data.length + 4));
+                    this._on_data(data.subarray(data.length + 4));
                 }
             }
 
@@ -223,9 +233,9 @@ module.exports = class SpeedDBClient extends EventEmitter {
             this.buffer = Buffer.allocUnsafe(length);
 
             // Continue with rest of data if any (minus header).
-            if (data.length > 4) this._on_data(data.slice(4));
+            if (data.length > 4) this._on_data(data.subarray(4));
         } else {
-            const packetPortion = data.slice(0, this.bufferRemainingBytes);
+            const packetPortion = data.subarray(0, this.bufferRemainingBytes);
             
             // Copy packet portion to buffer.
             packetPortion.copy(this.buffer, this.bufferPosition);
@@ -237,7 +247,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
             // If whole packet has been received.
             if (this.bufferRemainingBytes === 0) {
                 // Parse JSON (minus terminator because JS doesn't like those).
-                this._on_message(this.buffer.slice(0, -1));
+                this._on_message(this.buffer.subarray(0, -1));
 
                 // Reset buffer.
                 this.buffer = null;
@@ -245,7 +255,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
                 // If there is still data in the arriving packet.
                 if (packetPortion.length !== data.length) {
                     // Process new packet.
-                    this._on_data(data.slice(packetPortion.length));
+                    this._on_data(data.subarray(packetPortion.length));
                 }
             }
         }
@@ -279,8 +289,8 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
                 // Send handshake.
                 let handshakeData = {
-                    version: { major: 5, minor: 0},
-                    options: { short_attributes: false, error_text: true }
+                    version: { major: 6, minor: 0},
+                    options: { error_text: true }
                 };
 
                 if (this.encrypted) {
@@ -299,8 +309,8 @@ module.exports = class SpeedDBClient extends EventEmitter {
                     });
                 });
 
-                if (handshakeConfirmation.error) {
-                    reject(handshakeConfirmation.data.text);
+                if (handshakeConfirmation.e) {
+                    reject(handshakeConfirmation.d.t);
                     return;
                 }
 
@@ -313,8 +323,8 @@ module.exports = class SpeedDBClient extends EventEmitter {
                     this.socket.write(JSON.stringify(handshakeData2));
 
                     const secret = dh.computeSecret(Buffer.from(handshakeConfirmation.cipher.public_key, "base64"), null);
-                    console.log("Secret computed as:", secret.slice(0, 32).toString("base64"));
-                    this.secret = secret.slice(0, 32);
+                    console.log("Secret computed as:", secret.subarray(0, 32).toString("base64"));
+                    this.secret = secret.subarray(0, 32);
                     this.client_iv = Buffer.from(handshakeConfirmation.cipher.initial_iv, "base64");
                     this.server_iv = Buffer.from(handshakeConfirmation.cipher.initial_iv, "base64");
 
@@ -324,8 +334,8 @@ module.exports = class SpeedDBClient extends EventEmitter {
                         });
                     });
 
-                    if (encryptionConfirmation.error) {
-                        reject(encryptionConfirmation.data.text);
+                    if (encryptionConfirmation.e) {
+                        reject(encryptionConfirmation.d.t);
                         return;
                     }
                 }

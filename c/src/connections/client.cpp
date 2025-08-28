@@ -133,44 +133,27 @@ inline void send_json_handshake(client_socket_data* socket_data, rapidjson::Docu
     send(socket_data->socket_id, sb.GetString(), sb.GetSize(), 0);
 }
 
-// Make list of potential names.
-rapidjson::GenericStringRef<char> error_long = "error";
-rapidjson::GenericStringRef<char> error_short = "e";
-
-rapidjson::GenericStringRef<char> nonce_long = "nonce";
-rapidjson::GenericStringRef<char> nonce_short = "n";
-
-rapidjson::GenericStringRef<char> data_long = "data";
-rapidjson::GenericStringRef<char> data_short = "d";
-
-rapidjson::GenericStringRef<char> code_long = "code";
-rapidjson::GenericStringRef<char> code_short = "c";
-
-rapidjson::GenericStringRef<char> text_long = "text";
-rapidjson::GenericStringRef<char> text_short = "t";
-
 // Handle the message.
 // true = disconnect the socket.
 // false = continue.
 bool process_message(const char* buffer, uint32_t data_size, client_socket_data* socket_data) {
     int socket_id = socket_data->socket_id;
-    bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
 
     simdjson::ondemand::document data = socket_data->parser.iterate(buffer, data_size, data_size + simdjson::SIMDJSON_PADDING);
 
     // Attempt to extract query nonce.
     size_t query_nonce;
-    if (data[short_attr ? "n" : "nonce"].get(query_nonce) != 0) {
+    if (data[rj_query_keys::nonce].get(query_nonce) != 0) {
         rapidjson::Document data_object;
         data_object.SetObject();
-        data_object.AddMember(short_attr ? code_short : code_long, query_error::nonce_invalid, data_object.GetAllocator());
-        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::nonce_invalid], data_object.GetAllocator());
+        data_object.AddMember(rj_query_keys::error_code, query_error::nonce_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::nonce_invalid], data_object.GetAllocator());
 
         rapidjson::Document object;
         object.SetObject();
-        object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-        object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+        object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+        object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
         send_json(socket_data, object);
 
@@ -211,7 +194,6 @@ void* client_connection_handle(void* arg) {
 
     // Make socket_id local as it is often accessed and data in the stack is likely to be cached by the CPU.
     int socket_id = socket_data->socket_id;
-    bool short_attr = socket_data->config.short_attr;
     bool error_text = socket_data->config.error_text;
 
     // Allocate space for buffer.
@@ -228,13 +210,13 @@ void* client_connection_handle(void* arg) {
 
         rapidjson::Document data_object;
         data_object.SetObject();
-        data_object.AddMember(short_attr ? code_short : code_long, query_error::handshake_config_json_invalid, data_object.GetAllocator());
-        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::handshake_config_json_invalid], data_object.GetAllocator());
+        data_object.AddMember(rj_query_keys::error_code, query_error::handshake_config_json_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::handshake_config_json_invalid], data_object.GetAllocator());
 
         rapidjson::Document object;
         object.SetObject();
-        object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-        object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+        object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
+        object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
         send_json_handshake(socket_data, object);
 
@@ -263,13 +245,13 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::outdated_server_version, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::outdated_server_version], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::outdated_server_version, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::outdated_server_version], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
 
@@ -279,13 +261,13 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::outdated_client_version, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::outdated_client_version], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::outdated_client_version, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::outdated_client_version], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
             
@@ -306,13 +288,13 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::invalid_account_credentials, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::invalid_account_credentials, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
             
@@ -328,13 +310,13 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::invalid_account_credentials, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::invalid_account_credentials, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
             
@@ -379,13 +361,13 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::traffic_encryption_mandatory, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::traffic_encryption_mandatory], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::traffic_encryption_mandatory, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::traffic_encryption_mandatory], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
             
@@ -394,20 +376,6 @@ void* client_connection_handle(void* arg) {
         
         simdjson::ondemand::object options_object;
         if (data["options"].get(options_object) == 0) {
-            bool short_attributes_setting;
-            if (options_object["short_attributes"].get(short_attributes_setting) == 0) {
-                socket_data->config.short_attr = short_attributes_setting;
-                short_attr = short_attributes_setting;
-
-                // Set the key strings.
-                socket_data->key_strings.data = short_attributes_setting ? "d" : "data";
-                socket_data->key_strings.nonce = short_attributes_setting ? "n" : "nonce";
-                socket_data->key_strings.error = short_attributes_setting ? "e" : "error";
-                socket_data->key_strings.error_code = short_attributes_setting ? "c" : "code";
-                socket_data->key_strings.error_text = short_attributes_setting ? "t" : "text";
-                socket_data->key_strings.sj_data = short_attributes_setting ? "d" : "data";
-            }
-
             bool error_text_setting;
             if (options_object["error_text"].get(error_text_setting) == 0) {
                 socket_data->config.error_text = error_text_setting;
@@ -478,13 +446,13 @@ void* client_connection_handle(void* arg) {
         // Send handshake failure.
         rapidjson::Document data_object;
         data_object.SetObject();
-        data_object.AddMember(short_attr ? code_short : code_long, query_error::handshake_config_json_invalid, data_object.GetAllocator());
-        if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::handshake_config_json_invalid], data_object.GetAllocator());
+        data_object.AddMember(rj_query_keys::error_code, query_error::handshake_config_json_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::handshake_config_json_invalid], data_object.GetAllocator());
 
         rapidjson::Document object;
         object.SetObject();
-        object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-        object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+        object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+        object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
         send_json_handshake(socket_data, object);
 
@@ -520,13 +488,13 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::packet_size_exceeded, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::packet_size_exceeded], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::packet_size_exceeded, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::data, query_error_text[query_error::packet_size_exceeded], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json(socket_data, object);
 
@@ -542,13 +510,13 @@ void* client_connection_handle(void* arg) {
         if (buffer == nullptr) {
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::insufficient_memory, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::insufficient_memory], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::insufficient_memory, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::insufficient_memory], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json(socket_data, object);
 
@@ -583,13 +551,13 @@ void* client_connection_handle(void* arg) {
             logerr("Buffer overrun protection triggered from socket handle %d", socket_id);
             rapidjson::Document data_object;
             data_object.SetObject();
-            data_object.AddMember(short_attr ? code_short : code_long, query_error::overflow_protection_triggered, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(short_attr ? text_short : text_long, query_error_text[query_error::overflow_protection_triggered], data_object.GetAllocator());
+            data_object.AddMember(rj_query_keys::error_code, query_error::overflow_protection_triggered, data_object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::overflow_protection_triggered], data_object.GetAllocator());
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(short_attr ? error_short : error_long, true, object.GetAllocator());
-            object.AddMember(short_attr ? data_short : data_long, data_object, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json(socket_data, object);
 
