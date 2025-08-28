@@ -152,7 +152,7 @@ bool process_message(const char* buffer, uint32_t data_size, client_socket_data*
 
         rapidjson::Document object;
         object.SetObject();
-        object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+        object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
         object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
         send_json(socket_data, object);
@@ -250,7 +250,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
@@ -266,7 +266,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
@@ -293,7 +293,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
@@ -315,7 +315,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
@@ -366,7 +366,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json_handshake(socket_data, object);
@@ -451,7 +451,7 @@ void* client_connection_handle(void* arg) {
 
         rapidjson::Document object;
         object.SetObject();
-        object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+        object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
         object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
         send_json_handshake(socket_data, object);
@@ -493,7 +493,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json(socket_data, object);
@@ -515,7 +515,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json(socket_data, object);
@@ -556,7 +556,7 @@ void* client_connection_handle(void* arg) {
 
             rapidjson::Document object;
             object.SetObject();
-            object.AddMember(rj_query_keys::error, true, object.GetAllocator());
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
             send_json(socket_data, object);
