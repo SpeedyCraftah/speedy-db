@@ -73,10 +73,6 @@ namespace query_builder {
                 conditions_i++;
             }
 
-            inline void set_seek_direction(bool sd) {
-                this->seek_direction = sd;
-            }
-
             inline void set_limit(size_t limit) {
                 this->limit = limit;
             }
@@ -85,7 +81,6 @@ namespace query_builder {
             int conditions_i = 0;
             QueryComparison conditions[where_count];
 
-            bool seek_direction = 1;
             size_t limit = 0;
     };
 
@@ -105,7 +100,6 @@ namespace query_builder {
                 this->query.conditions = this->conditions;
                 this->query.conditions_count = this->conditions_i;
                 this->query.limit = this->limit;
-                this->query.seek_direction = this->seek_direction;
                 this->query.offset = this->offset;
 
                 return &this->query;
@@ -156,7 +150,6 @@ namespace query_builder {
                 this->query.changes = this->updates;
                 this->query.changes_count = this->updates_i;
                 this->query.limit = this->limit;
-                this->query.seek_direction = this->seek_direction;
 
                 return &this->query;
             }
@@ -205,7 +198,6 @@ namespace query_builder {
                 query.conditions = this->conditions;
                 query.conditions_count = this->conditions_i;
                 query.limit = this->limit;
-                query.seek_direction = this->seek_direction;
 
                 return &query;
             }

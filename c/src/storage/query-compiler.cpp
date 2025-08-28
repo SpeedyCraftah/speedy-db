@@ -189,15 +189,6 @@ namespace query_compiler {
         // Check for record offset.
         if (query_object["offset"].get(compiled_query->offset) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
-        // Check for seek direction.
-        // TODO - change query setting to boolean.
-        // TODO - check before checking for direction, performance penalty on invalid elements.
-        intmax_t seek_direction;
-        if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
-            if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
-            compiled_query->seek_direction = seek_direction == 1;
-        }
-
         simdjson::ondemand::array return_columns;
         if (query_object["return"].get(return_columns) == simdjson::error_code::SUCCESS) {
             // Return no columns by default.
@@ -214,18 +205,6 @@ namespace query_compiler {
 
             compiled_query->columns_returned = filtered_columns;
         }
-
-        // Check for a seek_where statement.
-        simdjson::ondemand::object seek_where_conditions;
-        if (query_object["seek_where"].get(seek_where_conditions) == simdjson::error_code::SUCCESS) {
-            std::unique_ptr<QueryComparison[]> seek_conditions(new QueryComparison[MAX_VARIABLE_OPERATION_COUNT]);
-            compiled_query->seek_conditions = seek_conditions.get();
-
-            // Process the conditions.
-            compiled_query->seek_conditions_count = parse_conditions(table, seek_conditions.get(), seek_where_conditions);
-
-            seek_conditions.release();
-        } 
 
         // Prevent smart pointers from deallocating.
         conditions.release();
@@ -313,15 +292,6 @@ namespace query_compiler {
         // TODO - check before checking for limit, performance penalty on invalid elements.
         if (query_object["limit"].get(compiled_query->limit) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
-        // Check for seek direction.
-        // TODO - change query setting to boolean.
-        // TODO - check before checking for direction, performance penalty on invalid elements.
-        intmax_t seek_direction;
-        if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
-            if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
-            compiled_query->seek_direction = seek_direction == 1;
-        }
-
         // Prevent smart pointers from deallocating.
         conditions.release();
 
@@ -407,15 +377,6 @@ namespace query_compiler {
         // Check for query return limits.
         // TODO - check before checking for limit, performance penalty on invalid elements.
         if (query_object["limit"].get(compiled_query->limit) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
-
-        // Check for seek direction.
-        // TODO - change query setting to boolean.
-        // TODO - check before checking for direction, performance penalty on invalid elements.
-        intmax_t seek_direction;
-        if (query_object["seek_direction"].get(seek_direction) == simdjson::error_code::SUCCESS) {
-            if (seek_direction != 1 && seek_direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
-            compiled_query->seek_direction = seek_direction == 1;
-        }
 
         // Prevent smart pointers from deallocating.
         conditions.release();

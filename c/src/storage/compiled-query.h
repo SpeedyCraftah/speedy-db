@@ -92,18 +92,12 @@ namespace query_compiler {
     struct CompiledFindQuery {
         void destroy() {
             if (conditions_count != 0) delete conditions;
-            if (seek_conditions_count != 0) delete seek_conditions;
             delete this;
         }
 
-        //GenericQueryComparison* conditions;
         QueryComparison* conditions;
         uint32_t conditions_count = 0;
 
-        QueryComparison* seek_conditions;
-        uint32_t seek_conditions_count = 0;
-
-        bool seek_direction = true; // false = end-start, true = start-end
         size_t limit = 0;
         size_t offset = 0;
         size_t columns_returned = SIZE_MAX;
@@ -122,7 +116,6 @@ namespace query_compiler {
         UpdateSet* changes;
         uint32_t changes_count = 0;
 
-        bool seek_direction = true; // false = end-start, true = start-end
         size_t limit = 0;
     };
 
@@ -135,7 +128,6 @@ namespace query_compiler {
         QueryComparison* conditions;
         uint32_t conditions_count = 0;
 
-        bool seek_direction = true; // false = end-start, true = start-end
         size_t limit = 0;
     };
 

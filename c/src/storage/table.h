@@ -101,8 +101,6 @@ class ActiveTable {
 
         // Iterator for scanning the tables.
         // Performance when compiled with Ofast is comparable to a normal loop.
-
-        // TODO - add bidirectional seek
         class data_iterator {
             public:
                 ActiveTable* table;

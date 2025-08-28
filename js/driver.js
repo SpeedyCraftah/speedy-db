@@ -279,7 +279,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
                 // Send handshake.
                 let handshakeData = {
-                    version: { major: 4, minor: 2 },
+                    version: { major: 5, minor: 0},
                     options: { short_attributes: false, error_text: true }
                 };
 
