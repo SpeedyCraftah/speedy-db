@@ -62,7 +62,6 @@ namespace query_compiler {
                             cmp.op = where_compare_op::STRING_CONTAINS;
                             cmp.column_index = column->index;
                             cmp.comparator = comparator;
-                            cmp.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
                         } else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         conditions_count++;
