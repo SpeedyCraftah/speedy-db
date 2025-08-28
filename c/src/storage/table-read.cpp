@@ -14,11 +14,11 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 
                 switch (column.type) {
-                    case types::byte: if (cmp.comparator.byte != data->byte) return false; break;
-                    case types::long64: if (cmp.comparator.long64 != data->long64) return false; break;
+                    case types::byte: if ((cmp.comparator.byte != data->byte) ^ cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 != data->long64) ^ cmp.negated) return false; break;
 
                     // Guaranteed to be 4 bytes in length.
-                    default: if (cmp.comparator.unsigned32_raw != data->unsigned32_raw) return false; break;
+                    default: if ((cmp.comparator.unsigned32_raw != data->unsigned32_raw) ^ cmp.negated) return false; break;
                 }
 
                 break;
@@ -27,10 +27,10 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             case query_compiler::where_compare_op::NUMERIC_GREATER_THAN: {
                 query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (cmp.comparator.byte >= data->byte) return false; break;
-                    case types::float32: if (cmp.comparator.float32 >= data->float32) return false; break;
-                    case types::long64: if (cmp.comparator.long64 >= data->long64) return false; break;
-                    case types::integer: if (cmp.comparator.int32 >= data->int32) return false; break;
+                    case types::byte: if ((cmp.comparator.byte >= data->byte) ^ cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 >= data->float32) ^ cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 >= data->long64) ^ cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 >= data->int32) ^ cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -40,10 +40,10 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             case query_compiler::where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO: {
                 query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (cmp.comparator.byte > data->byte) return false; break;
-                    case types::float32: if (cmp.comparator.float32 > data->float32) return false; break;
-                    case types::long64: if (cmp.comparator.long64 > data->long64) return false; break;
-                    case types::integer: if (cmp.comparator.int32 > data->int32) return false; break;
+                    case types::byte: if ((cmp.comparator.byte > data->byte) ^ cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 > data->float32) ^ cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 > data->long64) ^ cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 > data->int32) ^ cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -53,10 +53,10 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             case query_compiler::where_compare_op::NUMERIC_LESS_THAN: {
                 query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (cmp.comparator.byte <= data->byte) return false; break;
-                    case types::float32: if (cmp.comparator.float32 <= data->float32) return false; break;
-                    case types::long64: if (cmp.comparator.long64 <= data->long64) return false; break;
-                    case types::integer: if (cmp.comparator.int32 <= data->int32) return false; break;
+                    case types::byte: if ((cmp.comparator.byte <= data->byte) ^ cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 <= data->float32) ^ cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 <= data->long64) ^ cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 <= data->int32) ^ cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -66,10 +66,10 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             case query_compiler::where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO: {
                 query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
                 switch (column.type) {
-                    case types::byte: if (cmp.comparator.byte < data->byte) return false; break;
-                    case types::float32: if (cmp.comparator.float32 < data->float32) return false; break;
-                    case types::long64: if (cmp.comparator.long64 < data->long64) return false; break;
-                    case types::integer: if (cmp.comparator.int32 < data->int32) return false; break;
+                    case types::byte: if ((cmp.comparator.byte < data->byte) ^ cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 < data->float32) ^ cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 < data->long64) ^ cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 < data->int32) ^ cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -80,24 +80,35 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 query_compiler::StringQueryComparison& cmp = generic_cmp.string;
                 hashed_entry* entry = (hashed_entry*)data;
 
-                if (entry->hash != cmp.comparator_hash) return false;
-                if (entry->size != cmp.comparator.size()) return false;
+                bool condition_passed = false;
 
-                // Allocate space for the dynamic data loading.
-                char* dynamic_data = (char*)malloc(entry->size);
-                
-                // Read the dynamic data to the allocated space.
-                pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                {
+                    // Perform some heuristic checks before expensive comparison of string.
+                    if (entry->hash != cmp.comparator_hash) goto eq_eval_finished;
+                    if (entry->size != cmp.comparator.size()) goto eq_eval_finished;
 
-                // Compare the data character by character to 100% confirm they are a match.
-                // Safe to use memcmp since they are guaranteed to be same size.
-                int match_result = memcmp(dynamic_data, cmp.comparator.data(), entry->size);
+                    // Allocate space for the dynamic data loading.
+                    char* dynamic_data = (char*)malloc(entry->size);
+                    
+                    // Read the dynamic data to the allocated space.
+                    pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
 
-                // Free the allocated dynamic data as it is not needed anymore.
-                free(dynamic_data);
+                    // Compare the data character by character to 100% confirm they are a match.
+                    // Safe to use memcmp since they are guaranteed to be same size.
+                    int match_result = memcmp(dynamic_data, cmp.comparator.data(), entry->size);
 
-                // Check if the data is not a match.
-                if (match_result != 0) return false;
+                    // Free the allocated dynamic data as it is not needed anymore.
+                    free(dynamic_data);
+
+                    // Check if the data is not a match.
+                    if (match_result != 0) goto eq_eval_finished;
+
+                    // String is a match.
+                    condition_passed = true;
+                }
+
+                eq_eval_finished:
+                if (!condition_passed ^ cmp.negated) return false;
 
                 break;
             }
@@ -106,21 +117,34 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 query_compiler::StringQueryComparison& cmp = generic_cmp.string;
                 hashed_entry* entry = (hashed_entry*)data;
 
-                // Allocate space for the dynamic data loading.
-                char* dynamic_data = (char*)malloc(entry->size);
-                std::string_view dynamic_data_sv = std::string_view(dynamic_data, entry->size);
-                
-                // Read the dynamic data to the allocated space.
-                pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                bool condition_passed = false;
 
-                // Check if the string contains the item.
-                size_t match_result = dynamic_data_sv.find(cmp.comparator);
+                {
+                    // Perform some heuristic checks before expensive comparison of string.
+                    if (cmp.comparator.length() > entry->size) goto cont_eval_finished;
 
-                // Free the allocated dynamic data as it is not needed anymore.
-                free(dynamic_data);
+                    // Allocate space for the dynamic data loading.
+                    char* dynamic_data = (char*)malloc(entry->size);
+                    std::string_view dynamic_data_sv = std::string_view(dynamic_data, entry->size);
+                    
+                    // Read the dynamic data to the allocated space.
+                    pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
 
-                // Check if the data does not contain the string.
-                if (match_result == std::string_view::npos) return false;
+                    // Check if the string contains the item.
+                    size_t match_result = dynamic_data_sv.find(cmp.comparator);
+
+                    // Free the allocated dynamic data as it is not needed anymore.
+                    free(dynamic_data);
+
+                    // Check if the data does not contain the string.
+                    if (match_result == std::string_view::npos) goto cont_eval_finished;
+
+                    // String is a match.
+                    condition_passed = true;
+                }
+
+                cont_eval_finished:
+                if (!condition_passed ^ cmp.negated) return false;
 
                 break;
             }

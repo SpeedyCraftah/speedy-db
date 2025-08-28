@@ -23,6 +23,7 @@ namespace query_compiler {
     struct GenericQueryComparison {
         where_compare_op op;
         uint32_t column_index;
+        bool negated;
     };
 
     struct StringQueryComparison : GenericQueryComparison {

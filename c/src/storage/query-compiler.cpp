@@ -39,7 +39,6 @@ namespace query_compiler {
             auto type = value.type().value();
             
             // Advanced comparison.
-            // TODO - add equal comparison for advanced.
             if (type == json_type::object) {
                 simdjson::ondemand::object cmp_object = value.get_object();
 
@@ -48,8 +47,18 @@ namespace query_compiler {
                 if (column->type == types::string) {
                     for (auto advanced_condition : cmp_object) {
                         StringQueryComparison& cmp = conditions[conditions_count].string;
+                        cmp.column_index = column->index;
+
                         std::string_view advanced_key = advanced_condition.unescaped_key();
                         auto advanced_value = advanced_condition.value();
+
+                        // If the condition should be negated.
+                        if (advanced_key.starts_with('!')) {
+                            cmp.negated = true;
+
+                            // Remove the condition modifier before comparing operation names.
+                            advanced_key.remove_prefix(1);
+                        } else cmp.negated = false;
 
                         if (advanced_key == "contains") {
                             // We don't get type checking with raw_json, so manually do it.
@@ -58,23 +67,17 @@ namespace query_compiler {
                             std::string_view comparator = advanced_value.get_string();
 
                             cmp.op = where_compare_op::STRING_CONTAINS;
-                            cmp.column_index = column->index;
                             cmp.comparator = comparator;
-                        } 
-                        
-                        else if (advanced_key == "equal_to") {
+                        } else if (advanced_key == "equal_to") {
                             // We don't get type checking with raw_json, so manually do it.
                             if (advanced_value.type().value() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
                                 
                             std::string_view comparator = advanced_value.get_string();
 
                             cmp.op = where_compare_op::STRING_EQUAL;
-                            cmp.column_index = column->index;
                             cmp.comparator = comparator;
                             cmp.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
-                        }
-                        
-                        else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
+                        } else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         conditions_count++;
                         if (conditions_count >= MAX_VARIABLE_OPERATION_COUNT) throw query_compiler::exception(error::TOO_MANY_CMP_OPS);
@@ -83,14 +86,21 @@ namespace query_compiler {
                 
                 // Numeric advanced queries.
                 else {
-                    NumericQueryComparison& cmp = conditions[conditions_count].numeric;
-
                     // TODO - shorten LT/LG ops to >/< for efficiency ?
                     for (auto advanced_condition : cmp_object) {
+                        NumericQueryComparison& cmp = conditions[conditions_count].numeric;
+                        cmp.column_index = column->index;
+
                         std::string_view advanced_key = advanced_condition.unescaped_key();
                         auto advanced_value = advanced_condition.value();
 
-                        cmp.column_index = column->index;
+                        // If the condition should be negated.
+                        if (advanced_key.starts_with('!')) {
+                            cmp.negated = true;
+
+                            // Remove the condition modifier before comparing operation names.
+                            advanced_key.remove_prefix(1);
+                        } else cmp.negated = false;
                         
                         // Compiler checks lengths when comparing strings, no further optimisation needed.
                         if (advanced_key == "less_than") cmp.op = where_compare_op::NUMERIC_LESS_THAN;
@@ -121,13 +131,10 @@ namespace query_compiler {
                         // We don't get type checking with raw_json, so manually do it.
                         if (type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
-                        std::string_view comparator = value.raw_json();
-
-                        // Slice out quotes from beginning and end.
-                        comparator.remove_prefix(1);
-                        comparator.remove_suffix(1);
+                        std::string_view comparator = value.get_string();
 
                         cmp.op = where_compare_op::STRING_EQUAL;
+                        cmp.negated = false;
                         cmp.column_index = column->index;
                         cmp.comparator = comparator;
                         cmp.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
@@ -139,6 +146,7 @@ namespace query_compiler {
                     default: {
                         NumericQueryComparison& cmp = conditions[conditions_count].numeric;
                         cmp.op = where_compare_op::NUMERIC_EQUAL;
+                        cmp.negated = false;
                         cmp.column_index = column->index;
 
                         // Correctly cast binary values based on type.

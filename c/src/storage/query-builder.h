@@ -31,8 +31,16 @@ namespace query_builder {
             static StringQueryComparison string_equal_to(std::string_view comparator) {
                 StringQueryComparison cmp;
                 cmp.op = where_compare_op::STRING_EQUAL;
+                cmp.negated = false;
                 cmp.comparator = comparator;
                 cmp.comparator_hash = XXH64(comparator.data(), comparator.size(), HASH_SEED);
+
+                return cmp;
+            }
+
+            static StringQueryComparison string_not_equal_to(std::string_view comparator) {
+                StringQueryComparison cmp = string_equal_to(comparator);
+                cmp.negated = true;
 
                 return cmp;
             }
@@ -40,8 +48,16 @@ namespace query_builder {
             static NumericQueryComparison numeric_equal_to(NumericType comparator) {
                 NumericQueryComparison cmp;
                 cmp.op = where_compare_op::NUMERIC_EQUAL;
+                cmp.negated = false;
                 cmp.comparator = comparator;
                 
+                return cmp;
+            }
+
+            static NumericQueryComparison numeric_not_equal_to(NumericType comparator) {
+                NumericQueryComparison cmp = numeric_equal_to(comparator);
+                cmp.negated = true;
+
                 return cmp;
             }
 
