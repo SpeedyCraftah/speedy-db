@@ -111,11 +111,6 @@ const users = await db.table("users").findMany({
     return: ['name', 'balance'],
     // Only return the first 5 records that match the criteria - remove for no limit.
     limit: 5,
-    // Advanced queries ahead! None are necessary.
-    // Start looking for data only after this condition is satisfied - useful for finding data before/after a certain date.
-    seek_where: {},
-    // Specify the direction the database searches for records (1 = start-end, -1 = end-start) - useful for ordering data a certain way.
-    seek_direction: 1,
     // Skip 1 matched record before beginning to return records (does not count towards limit).
     offset: 1
 }); // [{ name: "henry", balance: 21.83 }, { name: "henry", balance: 238.0 }, ...]
