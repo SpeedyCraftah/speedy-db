@@ -43,7 +43,6 @@ namespace query_compiler {
                 simdjson::ondemand::object cmp_object = value.get_object();
 
                 // String advanced queries.
-                // String key compare operations are expensive, only check for possible combinations.
                 if (column->type == types::string) {
                     for (auto advanced_condition : cmp_object) {
                         StringQueryComparison& cmp = conditions[conditions_count].string;
@@ -86,7 +85,6 @@ namespace query_compiler {
                 
                 // Numeric advanced queries.
                 else {
-                    // TODO - shorten LT/LG ops to >/< for efficiency ?
                     for (auto advanced_condition : cmp_object) {
                         NumericQueryComparison& cmp = conditions[conditions_count].numeric;
                         cmp.column_index = column->index;
