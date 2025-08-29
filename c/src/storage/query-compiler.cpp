@@ -59,18 +59,12 @@ namespace query_compiler {
                             advanced_key.remove_prefix(1);
                         } else cmp.negated = false;
 
-                        if (advanced_key == "contains") {
-                            // We don't get type checking with raw_json, so manually do it.
-                            if (advanced_value.type().value() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
-                                
+                        if (advanced_key == "contains") {      
                             std::string_view comparator = advanced_value.get_string();
 
                             cmp.op = where_compare_op::STRING_CONTAINS;
                             cmp.comparator = comparator;
-                        } else if (advanced_key == "==") {
-                            // We don't get type checking with raw_json, so manually do it.
-                            if (advanced_value.type().value() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
-                                
+                        } else if (advanced_key == "==") {             
                             std::string_view comparator = advanced_value.get_string();
 
                             cmp.op = where_compare_op::STRING_EQUAL;
@@ -125,9 +119,6 @@ namespace query_compiler {
                 switch (column->type) {
                     case types::string: {
                         StringQueryComparison& cmp = conditions[conditions_count].string;
-
-                        // We don't get type checking with raw_json, so manually do it.
-                        if (type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
                         std::string_view comparator = value.get_string();
 
