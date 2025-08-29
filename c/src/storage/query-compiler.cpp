@@ -68,7 +68,7 @@ namespace query_compiler {
 
                             cmp.op = where_compare_op::STRING_CONTAINS;
                             cmp.comparator = comparator;
-                        } else if (advanced_key == "equal_to") {
+                        } else if (advanced_key == "==") {
                             // We don't get type checking with raw_json, so manually do it.
                             if (advanced_value.type().value() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
                                 
@@ -103,11 +103,11 @@ namespace query_compiler {
                         } else cmp.negated = false;
                         
                         // Compiler checks lengths when comparing strings, no further optimisation needed.
-                        if (advanced_key == "less_than") cmp.op = where_compare_op::NUMERIC_LESS_THAN;
-                        else if (advanced_key == "greater_than") cmp.op = where_compare_op::NUMERIC_GREATER_THAN;
-                        else if (advanced_key == "less_than_equal_to") cmp.op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
-                        else if (advanced_key == "greater_than_equal_to") cmp.op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
-                        else if (advanced_key == "equal_to") cmp.op = where_compare_op::NUMERIC_EQUAL;
+                        if (advanced_key == "<") cmp.op = where_compare_op::NUMERIC_LESS_THAN;
+                        else if (advanced_key == ">") cmp.op = where_compare_op::NUMERIC_GREATER_THAN;
+                        else if (advanced_key == "<=") cmp.op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
+                        else if (advanced_key == ">=") cmp.op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
+                        else if (advanced_key == "==") cmp.op = where_compare_op::NUMERIC_EQUAL;
                         else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         switch (column->type) {
