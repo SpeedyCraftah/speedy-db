@@ -4,6 +4,9 @@
 #include <string_view>
 #include "table-reusable-types.h"
 
+/* WARNING: UNDER NO CIRCUMSTANCES SHOULD THE STRUCTURES HERE BE RE-USED AFTER PROCESSING OF THE CURRENT QUERY */
+/* STRINGS HERE REFERENCE THE QUERY-PROVIDED STRING BUFFERS WHICH BECOME INVALID AFTER THE QUERY FINISHES! */
+
 namespace query_compiler {
     enum where_compare_op : uint8_t {
         STRING_EQUAL,
