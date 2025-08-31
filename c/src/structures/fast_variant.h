@@ -23,11 +23,9 @@ namespace speedystd {
       template <typename T>
       inline void set_as() {
         #if !defined(__OPTIMIZE__)
-          if (debug_instantiated) {
+          if (selected_type != 0) {
             throw std::runtime_error("Debug build check: calling code tried to set the variant type twice!");
           }
-  
-          debug_instantiated = true;
         #endif
   
         new (buffer) T();
@@ -54,11 +52,7 @@ namespace speedystd {
       static constexpr size_t size = std::max({sizeof(Types)...});
       uint selected_type = 0;
       char buffer[size];
-  
-      #if !defined(__OPTIMIZE__)
-        bool debug_instantiated = false;
-      #endif
-  
+
       template <typename T>
       constexpr inline uint get_selector_for_type() {
         return get_selector_for_type_impl<T, Types...>();
