@@ -21,7 +21,7 @@ namespace speedystd {
       fast_variant() {}
   
       template <typename T>
-      inline void set_as() {
+      inline T& set_as() {
         #if !defined(__OPTIMIZE__)
           if (selected_type != 0) {
             throw std::runtime_error("Debug build check: calling code tried to set the variant type twice!");
@@ -30,6 +30,8 @@ namespace speedystd {
   
         new (buffer) T();
         selected_type = get_selector_for_type<T>();
+
+        return as<T>();
       }
   
       template <typename T>
