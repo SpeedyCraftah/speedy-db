@@ -35,7 +35,7 @@ namespace speedystd {
       }
   
       template <typename T>
-      inline T& get() {
+      inline T& as() {
         #if !defined(__OPTIMIZE__)
           if (selected_type != get_selector_for_type<T>()) {
             throw std::runtime_error("Debug build check: calling code tried to get variant not in use!");
