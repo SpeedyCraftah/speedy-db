@@ -2,35 +2,37 @@
 #include "table-reusable-types.h"
 #include "table.h"
 
-bool ActiveTable::verify_record_conditions_match(record_header* record, query_compiler::QueryComparison* conditions, uint32_t conditions_length) {
+using namespace query_compiler;
+
+bool ActiveTable::verify_record_conditions_match(record_header* record, query_compiler::QueryComparator* conditions, uint32_t conditions_length) {
     // Go over all conditions for record.
     for (uint32_t i = 0; i < conditions_length; i++) {
-        query_compiler::QueryComparison& generic_cmp = conditions[i];
-        table_column& column = this->header_columns[generic_cmp.generic.column_index];
+        query_compiler::QueryComparator& generic_cmp = conditions[i];
+        table_column& column = this->header_columns[generic_cmp.column_index];
         NumericType* data = (NumericType*)(record->data + column.buffer_offset);
 
-        switch (generic_cmp.generic.op) {
+        switch (generic_cmp.op) {
             case query_compiler::where_compare_op::NUMERIC_EQUAL: {
-                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
+                query_compiler::QueryComparator::Numeric& cmp = generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 
                 switch (column.type) {
-                    case types::byte: if ((cmp.comparator.byte != data->byte) ^ cmp.negated) return false; break;
-                    case types::long64: if ((cmp.comparator.long64 != data->long64) ^ cmp.negated) return false; break;
+                    case types::byte: if ((cmp.comparator.byte != data->byte) ^ generic_cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 != data->long64) ^ generic_cmp.negated) return false; break;
 
                     // Guaranteed to be 4 bytes in length.
-                    default: if ((cmp.comparator.unsigned32_raw != data->unsigned32_raw) ^ cmp.negated) return false; break;
+                    default: if ((cmp.comparator.unsigned32_raw != data->unsigned32_raw) ^ generic_cmp.negated) return false; break;
                 }
 
                 break;
             }
 
             case query_compiler::where_compare_op::NUMERIC_GREATER_THAN: {
-                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
+                query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
-                    case types::byte: if ((cmp.comparator.byte >= data->byte) ^ cmp.negated) return false; break;
-                    case types::float32: if ((cmp.comparator.float32 >= data->float32) ^ cmp.negated) return false; break;
-                    case types::long64: if ((cmp.comparator.long64 >= data->long64) ^ cmp.negated) return false; break;
-                    case types::integer: if ((cmp.comparator.int32 >= data->int32) ^ cmp.negated) return false; break;
+                    case types::byte: if ((cmp.comparator.byte >= data->byte) ^ generic_cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 >= data->float32) ^ generic_cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 >= data->long64) ^ generic_cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 >= data->int32) ^ generic_cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -38,12 +40,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO: {
-                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
+                query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
-                    case types::byte: if ((cmp.comparator.byte > data->byte) ^ cmp.negated) return false; break;
-                    case types::float32: if ((cmp.comparator.float32 > data->float32) ^ cmp.negated) return false; break;
-                    case types::long64: if ((cmp.comparator.long64 > data->long64) ^ cmp.negated) return false; break;
-                    case types::integer: if ((cmp.comparator.int32 > data->int32) ^ cmp.negated) return false; break;
+                    case types::byte: if ((cmp.comparator.byte > data->byte) ^ generic_cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 > data->float32) ^ generic_cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 > data->long64) ^ generic_cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 > data->int32) ^ generic_cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -51,12 +53,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::NUMERIC_LESS_THAN: {
-                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
+                query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
-                    case types::byte: if ((cmp.comparator.byte <= data->byte) ^ cmp.negated) return false; break;
-                    case types::float32: if ((cmp.comparator.float32 <= data->float32) ^ cmp.negated) return false; break;
-                    case types::long64: if ((cmp.comparator.long64 <= data->long64) ^ cmp.negated) return false; break;
-                    case types::integer: if ((cmp.comparator.int32 <= data->int32) ^ cmp.negated) return false; break;
+                    case types::byte: if ((cmp.comparator.byte <= data->byte) ^ generic_cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 <= data->float32) ^ generic_cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 <= data->long64) ^ generic_cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 <= data->int32) ^ generic_cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -64,12 +66,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO: {
-                query_compiler::NumericQueryComparison& cmp =  generic_cmp.numeric;
+                query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
-                    case types::byte: if ((cmp.comparator.byte < data->byte) ^ cmp.negated) return false; break;
-                    case types::float32: if ((cmp.comparator.float32 < data->float32) ^ cmp.negated) return false; break;
-                    case types::long64: if ((cmp.comparator.long64 < data->long64) ^ cmp.negated) return false; break;
-                    case types::integer: if ((cmp.comparator.int32 < data->int32) ^ cmp.negated) return false; break;
+                    case types::byte: if ((cmp.comparator.byte < data->byte) ^ generic_cmp.negated) return false; break;
+                    case types::float32: if ((cmp.comparator.float32 < data->float32) ^ generic_cmp.negated) return false; break;
+                    case types::long64: if ((cmp.comparator.long64 < data->long64) ^ generic_cmp.negated) return false; break;
+                    case types::integer: if ((cmp.comparator.int32 < data->int32) ^ generic_cmp.negated) return false; break;
                     default: {};
                 }
 
@@ -77,7 +79,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
             }
 
             case query_compiler::where_compare_op::STRING_EQUAL: {
-                query_compiler::StringQueryComparison& cmp = generic_cmp.string;
+                query_compiler::QueryComparator::String& cmp = generic_cmp.info.as<query_compiler::QueryComparator::String>();
                 hashed_entry* entry = (hashed_entry*)data;
 
                 bool condition_passed = false;
@@ -108,13 +110,13 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 }
 
                 eq_eval_finished:
-                if (!condition_passed ^ cmp.negated) return false;
+                if (!condition_passed ^ generic_cmp.negated) return false;
 
                 break;
             }
 
             case query_compiler::where_compare_op::STRING_CONTAINS: {
-                query_compiler::StringQueryComparison& cmp = generic_cmp.string;
+                query_compiler::QueryComparator::String& cmp = generic_cmp.info.as<query_compiler::QueryComparator::String>();
                 hashed_entry* entry = (hashed_entry*)data;
 
                 bool condition_passed = false;
@@ -144,7 +146,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 }
 
                 cont_eval_finished:
-                if (!condition_passed ^ cmp.negated) return false;
+                if (!condition_passed ^ generic_cmp.negated) return false;
 
                 break;
             }

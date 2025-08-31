@@ -670,7 +670,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             
             send_query_response(socket_data, nonce);
 
-            query->destroy();
+            delete query;
             return;
         }
 
@@ -688,7 +688,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             send_query_response(socket_data, nonce, result);
 
-            query->destroy();
+            delete query;
             return;
         }
 
@@ -705,7 +705,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             send_query_response(socket_data, nonce, result);
 
-            query->destroy();
+            delete query;
             return;
         }
 
@@ -723,7 +723,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             send_query_response(socket_data, nonce, result);
 
-            query->destroy();
+            delete query;
             return;
         }
 
@@ -741,7 +741,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             send_query_response(socket_data, nonce, result);
 
-            query->destroy();
+            delete query;
             return;
         }
 

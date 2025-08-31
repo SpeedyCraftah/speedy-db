@@ -20,7 +20,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
 
         // If the column is dynamic.
         if (column.type == types::string) {
-            query_compiler::StringInsertColumn& column_data = query->values[i].string;
+            query_compiler::InsertColumn::String& column_data = query->values[i].info.as<query_compiler::InsertColumn::String>();
             hashed_entry* entry = (hashed_entry*)data_area;
 
             size_t data_length = column_data.data.length();
@@ -49,7 +49,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         
         // Column is numeric.
         else {
-            query_compiler::NumericInsertColumn& column_data = query->values[i].numeric;
+            query_compiler::InsertColumn::Numeric& column_data = query->values[i].info.as<query_compiler::InsertColumn::Numeric>();
             switch (column.type) {
                 case types::byte: *(int8_t*)data_area = *(int8_t*)&column_data.data; break;
                 case types::long64: *(long*)data_area = *(long*)&column_data.data; break;
@@ -126,12 +126,12 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
             if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
                 for (uint32_t j = 0; j < query->changes_count; j++) {
                     query_compiler::UpdateSet& generic_update = query->changes[j];
-                    table_column& column = this->header_columns[generic_update.generic.column_index];
+                    table_column& column = this->header_columns[generic_update.column_index];
                     uint8_t* record_data = r_header->data + column.buffer_offset;
 
-                    switch (generic_update.generic.op) {
+                    switch (generic_update.op) {
                         case query_compiler::update_changes_op::NUMERIC_SET: {
-                            query_compiler::NumericUpdateSet& update = generic_update.numeric;
+                            query_compiler::UpdateSet::Numeric& update = generic_update.info.as<query_compiler::UpdateSet::Numeric>();
                             
                             switch (column.type) {
                                 case types::byte: *record_data = *(uint8_t*)&update.new_value; break;
@@ -145,7 +145,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                         }
 
                         case query_compiler::update_changes_op::STRING_SET: {
-                            query_compiler::StringUpdateSet& update = generic_update.string;
+                            query_compiler::UpdateSet::String& update = generic_update.info.as<query_compiler::UpdateSet::String>();
                             hashed_entry* entry = (hashed_entry*)record_data;
                             
                             // Update the parameters.

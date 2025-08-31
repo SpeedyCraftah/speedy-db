@@ -28,48 +28,44 @@ namespace query_builder {
     template<size_t where_count>
     class general_where_query : public general_query {
         public:
-            static StringQueryComparison string_equal_to(std::string_view comparator) {
-                StringQueryComparison cmp;
+            static QueryComparator string_equal_to(std::string_view comparator) {
+                QueryComparator cmp;
                 cmp.op = where_compare_op::STRING_EQUAL;
                 cmp.negated = false;
-                cmp.comparator = comparator;
-                cmp.comparator_hash = XXH64(comparator.data(), comparator.size(), HASH_SEED);
+                cmp.info.set_as<QueryComparator::String>();
+                cmp.info.as<QueryComparator::String>().comparator = comparator;
+                cmp.info.as<QueryComparator::String>().comparator_hash = XXH64(comparator.data(), comparator.size(), HASH_SEED);
 
                 return cmp;
             }
 
-            static StringQueryComparison string_not_equal_to(std::string_view comparator) {
-                StringQueryComparison cmp = string_equal_to(comparator);
+            static QueryComparator string_not_equal_to(std::string_view comparator) {
+                QueryComparator cmp = string_equal_to(comparator);
                 cmp.negated = true;
 
                 return cmp;
             }
 
-            static NumericQueryComparison numeric_equal_to(NumericType comparator) {
-                NumericQueryComparison cmp;
+            static QueryComparator numeric_equal_to(NumericType comparator) {
+                QueryComparator cmp;
                 cmp.op = where_compare_op::NUMERIC_EQUAL;
                 cmp.negated = false;
-                cmp.comparator = comparator;
+                cmp.info.set_as<QueryComparator::Numeric>();
+                cmp.info.as<QueryComparator::Numeric>().comparator = comparator;
                 
                 return cmp;
             }
 
-            static NumericQueryComparison numeric_not_equal_to(NumericType comparator) {
-                NumericQueryComparison cmp = numeric_equal_to(comparator);
+            static QueryComparator numeric_not_equal_to(NumericType comparator) {
+                QueryComparator cmp = numeric_equal_to(comparator);
                 cmp.negated = true;
 
                 return cmp;
             }
 
-            void add_where_condition(std::string_view column_name, StringQueryComparison cmp) {
+            void add_where_condition(std::string_view column_name, QueryComparator cmp) {
                 cmp.column_index = resolve_column_index(column_name);
-                conditions[conditions_i].string = cmp;
-                conditions_i++;
-            }
-
-            void add_where_condition(std::string_view column_name, NumericQueryComparison cmp) {
-                cmp.column_index = resolve_column_index(column_name);
-                conditions[conditions_i].numeric = cmp;
+                conditions[conditions_i] = cmp;
                 conditions_i++;
             }
 
@@ -79,7 +75,7 @@ namespace query_builder {
 
         protected:
             int conditions_i = 0;
-            QueryComparison conditions[where_count];
+            QueryComparator conditions[where_count];
 
             size_t limit = 0;
     };
@@ -97,6 +93,7 @@ namespace query_builder {
             }
 
             CompiledFindQuery* build() {
+                this->query.is_static_alloc = true; // Important! Arrays here are released automatically once the class is dropped.
                 this->query.conditions = this->conditions;
                 this->query.conditions_count = this->conditions_i;
                 this->query.limit = this->limit;
@@ -115,36 +112,33 @@ namespace query_builder {
         public:
             update_query(ActiveTable* t) { this->table = t; }
 
-            static StringUpdateSet update_string(std::string_view new_value) {
-                StringUpdateSet update;
+            static UpdateSet update_string(std::string_view new_value) {
+                UpdateSet update;
                 update.op = update_changes_op::STRING_SET;
-                update.new_value = new_value;
-                update.new_value_hash = XXH64(new_value.data(), new_value.size(), HASH_SEED);
+                update.info.set_as<UpdateSet::String>();
+                update.info.as<UpdateSet::String>().new_value = new_value;
+                update.info.as<UpdateSet::String>().new_value_hash = XXH64(new_value.data(), new_value.size(), HASH_SEED);
                 
                 return update;
             }
 
-            static NumericUpdateSet update_numeric(NumericType value) {
-                NumericUpdateSet update;
+            static UpdateSet update_numeric(NumericType value) {
+                UpdateSet update;
                 update.op = update_changes_op::NUMERIC_SET;
-                update.new_value = value;
+                update.info.set_as<UpdateSet::Numeric>();
+                update.info.as<UpdateSet::Numeric>().new_value = value;
                 
                 return update;
             }
 
-            void add_change(std::string_view column_name, StringUpdateSet update) {
+            void add_change(std::string_view column_name, UpdateSet update) {
                 update.column_index = this->resolve_column_index(column_name);
-                updates[updates_i].string = update;
-                updates_i++;
-            }
-
-            void add_change(std::string_view column_name, NumericUpdateSet update) {
-                update.column_index = this->resolve_column_index(column_name);
-                updates[updates_i].numeric = update;
+                updates[updates_i] = update;
                 updates_i++;
             }
 
             CompiledUpdateQuery* build() {
+                this->query.is_static_alloc = true; // Important! Arrays here are released automatically once the class is dropped.
                 this->query.conditions = this->conditions;
                 this->query.conditions_count = this->conditions_i;
                 this->query.changes = this->updates;
@@ -167,17 +161,20 @@ namespace query_builder {
             insert_query(ActiveTable* t) { this->table = t; }
 
             void set_value(std::string_view column_name, std::string_view value) {
-                StringInsertColumn& column = values[this->resolve_column_index(column_name)].string;
-                column.data = value;
-                column.data_hash = XXH64(value.data(), value.size(), HASH_SEED);
+                InsertColumn& column = values[this->resolve_column_index(column_name)];
+                column.info.set_as<InsertColumn::String>();
+                column.info.as<InsertColumn::String>().data = value;
+                column.info.as<InsertColumn::String>().data_hash = XXH64(value.data(), value.size(), HASH_SEED);
             }
 
             void set_value(std::string_view column_name, NumericType value) {
-                NumericInsertColumn& column = values[this->resolve_column_index(column_name)].numeric;
-                column.data = value;
+                InsertColumn& column = values[this->resolve_column_index(column_name)];
+                column.info.set_as<InsertColumn::Numeric>();
+                column.info.as<InsertColumn::Numeric>().data = value;
             }
 
             CompiledInsertQuery* build() {
+                query.is_static_alloc = true; // Important! Arrays here are released automatically once the class is dropped.
                 query.values = values;
 
                 return &this->query;
@@ -195,6 +192,7 @@ namespace query_builder {
             erase_query(ActiveTable* t) { this->table = t; }
 
             CompiledEraseQuery* build() {
+                query.is_static_alloc = true; // Important! Arrays here are released automatically once the class is dropped.
                 query.conditions = this->conditions;
                 query.conditions_count = this->conditions_i;
                 query.limit = this->limit;

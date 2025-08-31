@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <string_view>
 #include "table-reusable-types.h"
+#include "../structures/fast_variant.h"
+#include "../structures/no_copy.h"
 
 /* WARNING: UNDER NO CIRCUMSTANCES SHOULD THE STRUCTURES HERE BE RE-USED AFTER PROCESSING OF THE CURRENT QUERY */
 /* STRINGS HERE REFERENCE THE QUERY-PROVIDED STRING BUFFERS WHICH BECOME INVALID AFTER THE QUERY FINISHES! */
@@ -23,124 +25,129 @@ namespace query_compiler {
         NUMERIC_SET
     };
 
-    struct GenericQueryComparison {
+    
+    struct QueryComparator {
+        struct String : NoCopy {
+            std::string_view comparator;
+            size_t comparator_hash;
+        };
+    
+        // Used for signed/float comparisons as well, excluding LG/LT.
+        struct Numeric : NoCopy {
+            NumericType comparator;
+        };
+
+        using ComparatorInfo = speedystd::fast_variant<
+            String,
+            Numeric
+        >;
+
         where_compare_op op;
         uint32_t column_index;
         bool negated;
+
+        ComparatorInfo info;
     };
 
-    struct StringQueryComparison : GenericQueryComparison {
-        std::string_view comparator;
-        size_t comparator_hash;
-    };
+    struct UpdateSet {
+        struct Numeric : NoCopy {
+            update_changes_op op;
+            uint32_t column_index;
+    
+            NumericType new_value;
+        };
+    
+        struct String : NoCopy {
+            update_changes_op op;
+            uint32_t column_index;
+    
+            std::string_view new_value;
+            size_t new_value_hash;
+        };
 
-    // Used for signed/float comparisons as well, excluding LG/LT.
-    struct NumericQueryComparison : GenericQueryComparison {
-        NumericType comparator;
-    };
+        using UpdateInfo = speedystd::fast_variant<
+            String,
+            Numeric
+        >;
 
-    union QueryComparison {
-        GenericQueryComparison generic;
-        StringQueryComparison string{};
-        NumericQueryComparison numeric;
-    };
-
-    struct GenericUpdateSet {
-        update_changes_op op;
-        uint32_t column_index;
-    };
-
-    struct NumericUpdateSet {
-        update_changes_op op;
-        uint32_t column_index;
-
-        NumericType new_value;
-    };
-
-    struct StringUpdateSet {
         update_changes_op op;
         uint32_t column_index;
 
-        std::string_view new_value;
-        size_t new_value_hash;
+        UpdateInfo info;
+    };
+    
+    struct InsertColumn {
+        struct Numeric : NoCopy {
+            NumericType data;
+        };
+    
+        struct String : NoCopy {
+            std::string_view data;
+            size_t data_hash;
+        };
+
+        using InsertInfo = speedystd::fast_variant<
+            Numeric,
+            String
+        >;
+
+        InsertInfo info;
     };
 
-    union UpdateSet {
-        GenericUpdateSet generic;
-        StringUpdateSet string{};
-        NumericUpdateSet numeric;
-    };
-
-
-    struct NumericInsertColumn {
-        NumericType data;
-    };
-
-    struct StringInsertColumn {
-        std::string_view data;
-        size_t data_hash;
-    };
-
-    union InsertColumn {
-        StringInsertColumn string{};
-        NumericInsertColumn numeric;
-    };
-
-
-    // TODO note - compare performance between using bitfield for result limits or an array, or both.
-    // TODO - consider memory deallocation
-
-    // TODO - set column amount limit to (sizeof(size_t) * 8)
 
     struct CompiledFindQuery {
-        void destroy() {
-            if (conditions_count != 0) delete conditions;
-            delete this;
-        }
+        bool is_static_alloc = false; // Whether conditions and other dynamic-sized arrays should be released or not.
 
-        QueryComparison* conditions;
+        QueryComparator* conditions = nullptr;
         uint32_t conditions_count = 0;
-
+        
         size_t limit = 0;
         size_t offset = 0;
         size_t columns_returned = SIZE_MAX;
+
+        ~CompiledFindQuery() {
+            if (!is_static_alloc && conditions != nullptr) delete[] conditions;
+        }
     };
 
     struct CompiledUpdateQuery {
-        void destroy() {
-            if (conditions_count != 0) delete conditions;
-            if (changes_count != 0) delete changes;
-            delete this;
-        }
+        bool is_static_alloc = false; // Whether conditions and other dynamic-sized arrays should be released or not.
 
-        QueryComparison* conditions;
+        QueryComparator* conditions = nullptr;
         uint32_t conditions_count = 0;
-
-        UpdateSet* changes;
+        
+        UpdateSet* changes = nullptr;
         uint32_t changes_count = 0;
-
+        
         size_t limit = 0;
+        
+        ~CompiledUpdateQuery() {
+            if (!is_static_alloc && conditions != nullptr) delete[] conditions;
+            if (!is_static_alloc && changes != nullptr) delete[] changes;
+        }
     };
 
     struct CompiledEraseQuery {
-        void destroy() {
-            if (conditions_count != 0) delete conditions;
-            delete this;
-        }
+        bool is_static_alloc = false; // Whether conditions and other dynamic-sized arrays should be released or not.
 
-        QueryComparison* conditions;
+        QueryComparator* conditions = nullptr;
         uint32_t conditions_count = 0;
-
+        
         size_t limit = 0;
+        
+        ~CompiledEraseQuery() {
+            if (!is_static_alloc && conditions_count != 0) delete[] conditions;
+        }
     };
 
     // Values must be the count of table columns and be in the indexed order.
     struct CompiledInsertQuery {
-        void destroy() {
-            if (values != nullptr) delete values;
-            delete this;
-        }
+        bool is_static_alloc = false; // Whether conditions and other dynamic-sized arrays should be released or not.
+        
+        InsertColumn* values = nullptr;
 
-        InsertColumn* values;
+        ~CompiledInsertQuery() {
+            if (!is_static_alloc && values != nullptr) delete[] values;
+        }
     };
 }
