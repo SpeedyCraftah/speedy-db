@@ -106,9 +106,9 @@ const users = await db.table("users").findMany({
         // Multiple conditions in a where turns into an AND.
         name: "henry",
         // Range query, age >= 30 but less than 80.
-        age: { greater_than_equal_to: 30, less_than: 80 },
+        age: { ">=": 30, "<": 80 },
         // A negation query, return all records if balance != 0 (all advanced query operators support negation via '!').
-        balance: { "!equal_to": 0.0 }
+        balance: { "!==": 0.0 }
     },
     // Return only the name and balance of records - remove for all.
     return: ['name', 'balance'],
