@@ -16,6 +16,9 @@
 
 #define BULK_HEADER_READ_COUNT 2000
 
+// Some operations use size_t bitfields to take action on certain columns, hence limit has to be that of maximum size_t bits.
+#define DB_MAX_PHYSICAL_COLUMNS (sizeof(size_t) * 8)
+
 // Table structs.
 
 struct table_column {
@@ -96,7 +99,7 @@ class ActiveTable {
         // Needs refactoring with concurrent operations.
         record_header* header_buffer;
 
-        bool verify_record_conditions_match(record_header* record, query_compiler::QueryComparison* conditions, uint32_t conditions_length);
+        bool verify_record_conditions_match(record_header* record, query_compiler::QueryComparator* conditions, uint32_t conditions_length);
         void assemble_record_data_to_json(record_header* record, size_t included_columns, rapidjson::Document& output);
 
         // Iterator for scanning the tables.

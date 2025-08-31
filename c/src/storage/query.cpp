@@ -193,7 +193,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Slow but doesn't matter in this query.
             size_t columns_object_count = columns_object.count_fields();
 
-            if (columns_object_count > 20) {
+            if (columns_object_count > DB_MAX_PHYSICAL_COLUMNS) {
                 send_query_error(socket_data, nonce, query_error::too_many_columns);
                 return;
             }
