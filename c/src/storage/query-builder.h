@@ -63,9 +63,9 @@ namespace query_builder {
                 return cmp;
             }
 
-            void add_where_condition(std::string_view column_name, QueryComparator cmp) {
+            void add_where_condition(std::string_view column_name, QueryComparator&& cmp) {
                 cmp.column_index = resolve_column_index(column_name);
-                conditions[conditions_i] = cmp;
+                conditions[conditions_i] = std::move(cmp);
                 conditions_i++;
             }
 
@@ -131,9 +131,9 @@ namespace query_builder {
                 return update;
             }
 
-            void add_change(std::string_view column_name, UpdateSet update) {
+            void add_change(std::string_view column_name, UpdateSet&& update) {
                 update.column_index = this->resolve_column_index(column_name);
-                updates[updates_i] = update;
+                updates[updates_i] = std::move(update);
                 updates_i++;
             }
 

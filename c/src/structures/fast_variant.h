@@ -46,10 +46,27 @@ namespace speedystd {
       }
   
       ~fast_variant() {
-        if (selected_type == 0) return;
-        destroy_object_impl<Types...>();
+        if (selected_type != 0) destroy_object_impl<Types...>();
       }
-  
+
+      fast_variant(fast_variant&& other) noexcept {
+        this->selected_type = other.selected_type;
+        other.selected_type = 0;
+
+        if (selected_type != 0) move_object_impl<Types...>(std::move(other));
+      }
+      
+      fast_variant& operator=(fast_variant&& other) noexcept {
+        this->selected_type = other.selected_type;
+        other.selected_type = 0;
+
+        if (selected_type != 0) move_object_impl<Types...>(std::move(other));
+        return *this;
+      }
+
+      fast_variant& operator=(const fast_variant&) = delete;
+      fast_variant(const fast_variant& other) = delete;
+
     private:
       static constexpr size_t size = std::max({sizeof(Types)...});
       uint selected_type = 0;
@@ -84,9 +101,16 @@ namespace speedystd {
         else if constexpr (sizeof...(Rest) > 0) {
           destroy_object_impl<Rest...>();
         }
+      }
+
+      template <typename First, typename... Rest>
+      void move_object_impl(fast_variant&& other) {
+        if (other.selected_type == sizeof...(Types) - sizeof...(Rest)) {
+          new (this->buffer) First(std::move(*reinterpret_cast<First*>(&other.buffer)));
+        }
         
-        else {
-          throw std::runtime_error("Possibly corrupt selected_type");
+        else if constexpr (sizeof...(Rest) > 0) {
+          move_object_impl<Rest...>(std::move(other));
         }
       }
   };
