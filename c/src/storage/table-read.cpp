@@ -1,6 +1,7 @@
 #include "compiled-query.h"
 #include "table-reusable-types.h"
 #include "table.h"
+#include <string_view>
 
 using namespace query_compiler;
 
@@ -78,6 +79,24 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
+            case query_compiler::where_compare_op::NUMERIC_IN_LIST: {
+                query_compiler::QueryComparator::NumericInList& cmp = generic_cmp.info.as<query_compiler::QueryComparator::NumericInList>();
+                
+                NumericType value;
+
+                switch (column.type) {
+                    case types::byte: value.byte = data->byte; break;
+                    case types::long64: value.long64 = data->long64; break;
+
+                    // Guaranteed to be 4 bytes in length.
+                    default: value.unsigned32_raw = data->unsigned32_raw; break;
+                }
+
+                if ((!cmp.list.contains(value.unsigned64_raw)) ^ generic_cmp.negated) return false;
+
+                break;
+            }
+
             case query_compiler::where_compare_op::STRING_EQUAL: {
                 query_compiler::QueryComparator::String& cmp = generic_cmp.info.as<query_compiler::QueryComparator::String>();
                 hashed_entry* entry = (hashed_entry*)data;
@@ -146,6 +165,50 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 }
 
                 cont_eval_finished:
+                if (!condition_passed ^ generic_cmp.negated) return false;
+
+                break;
+            }
+
+            case query_compiler::where_compare_op::STRING_IN_LIST: {
+                query_compiler::QueryComparator::StringInList& cmp = generic_cmp.info.as<query_compiler::QueryComparator::StringInList>();
+                hashed_entry* entry = (hashed_entry*)data;
+
+                bool condition_passed = false;
+
+                {
+                    // Perform some heuristic checks before expensive hash checks.
+                    if (entry->size > cmp.longest_string_length || entry->size < cmp.shortest_string_length) goto list_eval_finished;
+
+                    auto list_entry = cmp.list.find(entry->hash);
+
+                    // Check if the column's hash is in the list.
+                    if (list_entry == cmp.list.end()) goto list_eval_finished;
+
+                    // Allocate space for the dynamic data loading.
+                    char* dynamic_data = (char*)malloc(entry->size);
+                    std::string_view ro_dynamic_string = std::string_view(dynamic_data, entry->size);
+
+                    // Read the dynamic data to the allocated space.
+                    pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+
+                    // Check if the hash matches equal to any of the actual string values.
+                    if (list_entry->second.is_single()) {
+                        condition_passed = list_entry->second.get_single() == ro_dynamic_string;
+                    } else {
+                        for (const std::string_view& key : list_entry->second) {
+                            if (key == ro_dynamic_string) {
+                                condition_passed = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Free the allocated dynamic data as it is not needed anymore.
+                    free(dynamic_data);
+                }
+
+                list_eval_finished:
                 if (!condition_passed ^ generic_cmp.negated) return false;
 
                 break;

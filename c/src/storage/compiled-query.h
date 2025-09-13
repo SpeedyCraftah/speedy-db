@@ -2,9 +2,12 @@
 
 #include <stdint.h>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include "table-reusable-types.h"
 #include "../structures/fast_variant.h"
 #include "../structures/no_copy.h"
+#include "../structures/short_store.h"
 
 /* WARNING: UNDER NO CIRCUMSTANCES SHOULD THE STRUCTURES HERE BE RE-USED AFTER PROCESSING OF THE CURRENT QUERY */
 /* STRINGS HERE REFERENCE THE QUERY-PROVIDED STRING BUFFERS WHICH BECOME INVALID AFTER THE QUERY FINISHES! */
@@ -17,7 +20,9 @@ namespace query_compiler {
         NUMERIC_GREATER_THAN_EQUAL_TO,
         NUMERIC_LESS_THAN,
         NUMERIC_LESS_THAN_EQUAL_TO,
-        STRING_CONTAINS
+        STRING_CONTAINS,
+        NUMERIC_IN_LIST,
+        STRING_IN_LIST
     };
 
     enum update_changes_op : uint8_t {
@@ -37,9 +42,21 @@ namespace query_compiler {
             NumericType comparator;
         };
 
+        struct NumericInList : NoCopy {
+            std::unordered_set<size_t> list;
+        };
+
+        struct StringInList : NoCopy {
+            std::unordered_map<size_t, speedystd::short_store<std::string_view>> list;
+            uint32_t longest_string_length;
+            uint32_t shortest_string_length;
+        };
+
         using ComparatorInfo = speedystd::fast_variant<
             String,
-            Numeric
+            Numeric,
+            NumericInList,
+            StringInList
         >;
 
         where_compare_op op;

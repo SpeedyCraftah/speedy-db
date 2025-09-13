@@ -94,7 +94,8 @@ db.on("fatalError", d => {
 await db.table("users").create({
     name: { type: "string" },
 	  age: { type: "byte" },
-    balance: { type: "float" }
+    balance: { type: "float" }, /* FYI floats are safe to use for currency... provided they stay within the float precision range and no arithmetic is done! */
+    favourite_number: { type: "long" }
 }).catch(() => null);
 
 // Open table - catch to prevent error if table is already open.
@@ -108,7 +109,9 @@ const users = await db.table("users").findMany({
         // Range query, age >= 30 but less than 80.
         age: { ">=": 30, "<": 80 },
         // A negation query, return all records if balance != 0 (all advanced query operators support negation via '!').
-        balance: { "!==": 0.0 }
+        balance: { "!==": 0.0 },
+        // Contains query, matches columns that are any of the following: 21, 52, 91 or 100.
+        favourite_number: { "in": [21, 52, 91, 100] }
     },
     // Return only the name and balance of records - remove for all.
     return: ['name', 'balance'],

@@ -1,5 +1,6 @@
 #include "query-compiler.h"
 #include "compiled-query.h"
+#include "table-reusable-types.h"
 #include "table.h"
 #include <memory>
 #include <string_view>
@@ -8,7 +9,6 @@
 #include "../misc/constants.h"
 
 using simdjson::fallback::ondemand::json_type;
-using simdjson::fallback::number_type;
 
 #define MAX_VARIABLE_OPERATION_COUNT 20
 
@@ -23,6 +23,18 @@ namespace query_compiler {
         "Your query contains duplicates of the same column which is not allowed for this query.",
         "Your query does not contain all of the table columns which is required for this query."
     };
+
+    NumericType parse_numeric_sj_value(types column_type, simdjson::ondemand::value& value) {
+        NumericType numeric;
+
+        switch (column_type) {
+            case types::integer: numeric.int32 = (int)value.get_int64(); break;
+            case types::float32: numeric.float32 = (float)value.get_double(); break;
+            default: numeric.unsigned64_raw = value.get_uint64(); break;
+        }
+
+        return numeric;
+    }
 
     // Reusable functions.
     uint32_t parse_conditions(ActiveTable* table, QueryComparator conditions[], simdjson::ondemand::object& conditions_object) {
@@ -47,7 +59,6 @@ namespace query_compiler {
                 if (column->type == types::string) {
                     for (auto advanced_condition : cmp_object) {
                         QueryComparator& cmp = conditions[conditions_count];
-                        QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
                         cmp.column_index = column->index;
 
                         std::string_view advanced_key = advanced_condition.unescaped_key();
@@ -61,17 +72,56 @@ namespace query_compiler {
                             advanced_key.remove_prefix(1);
                         } else cmp.negated = false;
 
-                        if (advanced_key == "contains") {      
+                        if (advanced_key == "contains") {
+                            QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
                             std::string_view comparator = advanced_value.get_string();
 
                             cmp.op = where_compare_op::STRING_CONTAINS;
                             cmp_info.comparator = comparator;
-                        } else if (advanced_key == "==") {             
+                        } else if (advanced_key == "==") {
+                            QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
                             std::string_view comparator = advanced_value.get_string();
 
                             cmp.op = where_compare_op::STRING_EQUAL;
                             cmp_info.comparator = comparator;
                             cmp_info.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
+                        } else if (advanced_key == "in") {
+                            // TODO: Add version for short lists which uses a simple array instead of a hash structure.
+                            QueryComparator::StringInList& cmp_info = cmp.info.set_as<QueryComparator::StringInList>();
+                            cmp.op = where_compare_op::STRING_IN_LIST;
+                            cmp_info.shortest_string_length = UINT32T_MAX;
+                            cmp_info.longest_string_length = 0;
+                            
+                            simdjson::ondemand::array keys = advanced_value.get_array();
+
+                            // Count the array and reserve an estimated amount of elements to avoid re-allocations.
+                            cmp_info.list.reserve(keys.count_elements());
+
+                            for (std::string_view key : keys) {
+                                size_t hash = XXH64(key.data(), key.length(), HASH_SEED);
+
+                                auto it = cmp_info.list.find(hash);
+                                if (it != cmp_info.list.end()) {
+                                    // Don't include any duplicates.
+                                    if (it->second.is_single()) {
+                                        if (it->second.get_single() == key) continue;
+                                    } else {
+                                        for (const std::string_view& existing_key : it->second) {
+                                            if (existing_key == key) goto skip_string;
+                                        }
+                                    }
+
+                                    it->second.add(key);
+                                } else {
+                                    cmp_info.list.emplace(XXH64(key.data(), key.length(), HASH_SEED), speedystd::short_store(key));
+                                }
+
+                                // Re-compute longest and shortest string values.
+                                if (key.length() > cmp_info.longest_string_length) cmp_info.longest_string_length = key.length();
+                                if (key.length() < cmp_info.shortest_string_length) cmp_info.shortest_string_length = key.length();
+
+                                skip_string: continue;
+                            }
                         } else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
 
                         conditions_count++;
@@ -83,7 +133,6 @@ namespace query_compiler {
                 else {
                     for (auto advanced_condition : cmp_object) {
                         QueryComparator& cmp = conditions[conditions_count];
-                        QueryComparator::Numeric& cmp_info = cmp.info.set_as<QueryComparator::Numeric>();
                         cmp.column_index = column->index;
 
                         std::string_view advanced_key = advanced_condition.unescaped_key();
@@ -97,18 +146,36 @@ namespace query_compiler {
                             advanced_key.remove_prefix(1);
                         } else cmp.negated = false;
                         
-                        // Compiler checks lengths when comparing strings, no further optimisation needed.
-                        if (advanced_key == "<") cmp.op = where_compare_op::NUMERIC_LESS_THAN;
-                        else if (advanced_key == ">") cmp.op = where_compare_op::NUMERIC_GREATER_THAN;
-                        else if (advanced_key == "<=") cmp.op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
-                        else if (advanced_key == ">=") cmp.op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
-                        else if (advanced_key == "==") cmp.op = where_compare_op::NUMERIC_EQUAL;
-                        else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
+                        // Queries which require a different cmp_info structure.
+                        if (advanced_key == "in") {
+                            // TODO: Add version for short lists which uses a simple array instead of a hash structure.
+                            QueryComparator::NumericInList& cmp_info = cmp.info.set_as<QueryComparator::NumericInList>();
+                            cmp.op = where_compare_op::NUMERIC_IN_LIST;
 
-                        switch (column->type) {
-                            case types::integer: cmp_info.comparator.int32 = (int)advanced_value.get_int64(); break;
-                            case types::float32: cmp_info.comparator.float32 = (float)advanced_value.get_double(); break;
-                            default: cmp_info.comparator.unsigned64_raw = advanced_value.get_uint64(); break;
+                            simdjson::ondemand::array keys = advanced_value.get_array();
+
+                            // Count the array and reserve an estimated amount of elements to avoid re-allocations.
+                            cmp_info.list.reserve(keys.count_elements());
+
+                            for (simdjson::ondemand::value key : keys) {
+                                NumericType numeric = parse_numeric_sj_value(column->type, key);
+                                cmp_info.list.insert(numeric.unsigned64_raw);
+                            }
+                        }
+                        
+                        // Numeric comparisons with basic comparators.
+                        else {
+                            if (advanced_key == "<") cmp.op = where_compare_op::NUMERIC_LESS_THAN;
+                            else if (advanced_key == ">") cmp.op = where_compare_op::NUMERIC_GREATER_THAN;
+                            else if (advanced_key == "<=") cmp.op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
+                            else if (advanced_key == ">=") cmp.op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
+                            else if (advanced_key == "==") cmp.op = where_compare_op::NUMERIC_EQUAL;
+                            else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
+                            
+                            QueryComparator::Numeric& cmp_info = cmp.info.set_as<QueryComparator::Numeric>();
+                            
+                            // Parse the number.
+                            cmp_info.comparator = parse_numeric_sj_value(column->type, advanced_value.value());
                         }
 
                         conditions_count++;
@@ -144,12 +211,8 @@ namespace query_compiler {
                         cmp.negated = false;
                         cmp.column_index = column->index;
 
-                        // Correctly cast binary values based on type.
-                        switch (value.get_number_type()) {
-                            case number_type::floating_point_number: cmp_info.comparator.float32 = (float)value.get_double(); break;
-                            case number_type::signed_integer: cmp_info.comparator.long64 = (long)value.get_int64(); break;
-                            default: cmp_info.comparator.unsigned64_raw = value.get_uint64(); break;
-                        }
+                        // Parse the number.
+                        cmp_info.comparator = parse_numeric_sj_value(column->type, value.value());
 
                         break;
                     }
