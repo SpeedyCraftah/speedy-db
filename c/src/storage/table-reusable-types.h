@@ -12,7 +12,7 @@ enum types: uint32_t {
 };
 
 union NumericType {
-    size_t unsigned64_raw;
+    size_t unsigned64_raw = 0;
     uint32_t unsigned32_raw;
     long long64;
     uint8_t byte;
