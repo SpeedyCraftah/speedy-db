@@ -24,7 +24,7 @@ namespace speedystd {
             return _is_single;
         }
 
-        inline T get_single() const {
+        inline const T& get_single() const {
             return local_store;
         }
 
