@@ -94,7 +94,16 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
             auto record = *it;
             
             uint8_t permissions = record.get_numeric("permissions")->byte;
-            (*this->permissions)[record.get_numeric("index")->long64] = *(TablePermissions*)&permissions;
+            long index = record.get_numeric("index")->long64;
+
+            // Safety check to see if a permission entry already exists for this user, and a duplicate was found.
+            // This COULD be a debug-only check, but loading tables is rare so the added safety benefit is worth the slight performance cost.
+            if (this->permissions->find(index) != this->permissions->end()) {
+                logerr("Safety check fail! Loaded table '%s' and user index %ld permission more than once for this user!", this->header.name, index);
+                std::terminate();
+            }
+            
+            (*this->permissions)[index] = *(TablePermissions*)&permissions;
         }
     }
 
