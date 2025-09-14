@@ -103,10 +103,6 @@ void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account,
         // Delete existing set.
         table->permissions->erase(account->internal_index);
 
-        // Update the database on the new permissions.
-        NumericType permissions_u;
-        permissions_u.byte = *(uint8_t*)&permissions;
-
         query_builder::update_query<2, 1> query(permissions_table);
         query.add_where_condition("table", query.string_equal_to(table->name));
         query.add_where_condition("index", query.numeric_equal_to(index_u));
