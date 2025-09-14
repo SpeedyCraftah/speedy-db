@@ -18,7 +18,11 @@ namespace speedystd {
   template <typename... Types>
   class fast_variant {
     public:
-      fast_variant() {}
+      fast_variant() {
+        #if !defined(__OPTIMIZE__)
+            debug_view = std::tuple<Types*...>{reinterpret_cast<Types*>(buffer)...};
+        #endif
+      }
   
       template <typename T>
       inline T& set_as() {
@@ -51,16 +55,17 @@ namespace speedystd {
 
       fast_variant(fast_variant&& other) noexcept {
         this->selected_type = other.selected_type;
-        other.selected_type = 0;
-
         if (selected_type != 0) move_object_impl<Types...>(std::move(other));
+
+        other.selected_type = 0;
       }
       
       fast_variant& operator=(fast_variant&& other) noexcept {
         this->selected_type = other.selected_type;
-        other.selected_type = 0;
-
         if (selected_type != 0) move_object_impl<Types...>(std::move(other));
+
+        other.selected_type = 0;
+        
         return *this;
       }
 
@@ -68,11 +73,16 @@ namespace speedystd {
       fast_variant(const fast_variant& other) = delete;
 
     private:
-      static constexpr size_t size = std::max({sizeof(Types)...});
-      static constexpr size_t align = std::max({alignof(Types)...});
+      static constexpr size_t _size = std::max({sizeof(Types)...});
+      static constexpr size_t _align = std::max({alignof(Types)...});
 
       uint selected_type = 0;
-      alignas(align) char buffer[size];
+      alignas(_align) char buffer[_size];
+
+      // A view specifically for debuggers which allows visibility into the buffer as a particular type.
+      #if !defined(__OPTIMIZE__)
+        std::tuple<Types*...> debug_view;
+      #endif
 
       template <typename T>
       constexpr inline uint get_selector_for_type() {
