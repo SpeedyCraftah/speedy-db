@@ -629,11 +629,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     ActiveTable* table = (*open_tables)[name];
 
-    // If user is querying internal table.
-    if (table->is_internal) {
-        send_query_error(socket_data, nonce, query_error::name_reserved);
-        return;
-    }
+    // If user is querying an internal table.
+    // Only exception to this is if the build is in debug mode since it is helpful to be able to query internal tables.
+    #ifdef __OPTIMIZE__
+        if (table->is_internal) {
+            send_query_error(socket_data, nonce, query_error::name_reserved);
+            return;
+        }
+    #endif
 
     // Get the permissions available for the user in the table.
     const TablePermissions* table_permissions = get_table_permissions_for_account_unlocked(table, account);
