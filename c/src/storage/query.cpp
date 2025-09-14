@@ -636,6 +636,11 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             send_query_error(socket_data, nonce, query_error::name_reserved);
             return;
         }
+    #else
+        if (table->is_internal && account->permissions.HIERARCHY_INDEX != 0) {
+            send_query_error(socket_data, nonce, query_error::name_reserved);
+            return;
+        }
     #endif
 
     // Get the permissions available for the user in the table.
