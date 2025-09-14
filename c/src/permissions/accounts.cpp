@@ -90,6 +90,14 @@ void update_database_account(DatabaseAccount* account, DatabaseAccount new_accou
 void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account, TablePermissions permissions) {
     ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
 
+    // Prepare the account index for query.
+    NumericType index_u;
+    index_u.unsigned64_raw = account->internal_index;
+
+    // Prepare the permissions for update.
+    NumericType permissions_u;
+    permissions_u.byte = *(uint8_t*)&permissions;
+
     // Check if permissions are already set for this table and account.
     if (table->permissions->count(account->internal_index)) {
         // Delete existing set.
@@ -99,19 +107,14 @@ void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account,
         NumericType permissions_u;
         permissions_u.byte = *(uint8_t*)&permissions;
 
-        query_builder::update_query<1, 1> query(permissions_table);
+        query_builder::update_query<2, 1> query(permissions_table);
         query.add_where_condition("table", query.string_equal_to(table->name));
+        query.add_where_condition("index", query.numeric_equal_to(index_u));
         query.add_change("permissions", query.update_numeric(permissions_u));
         query.set_limit(1);
         
         permissions_table->update_many_records(query.build());
     } else {
-        NumericType index_u;
-        index_u.unsigned64_raw = account->internal_index;
-
-        NumericType permissions_u;
-        permissions_u.byte = *(uint8_t*)&permissions;
-
         query_builder::insert_query<3> query(permissions_table);
         query.set_value("index", index_u);
         query.set_value("permissions", permissions_u);
