@@ -25,8 +25,8 @@ namespace crypto {
     };
 
     namespace password {
-        void hash(char* plaintext_password, AccountPassword* out);
-        bool equal(char* plaintext_password, AccountPassword* hashed_password);
+        void hash(std::string_view plaintext_password, AccountPassword* out);
+        bool equal(std::string_view plaintext_password, AccountPassword* hashed_password);
     };
 
     void random_bytes(void* dest, size_t size);

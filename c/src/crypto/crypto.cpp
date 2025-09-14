@@ -116,25 +116,25 @@ size_t crypto::aes256::decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, cons
 #define HASH_LENGTH 32
 #define ITERATIONS 10000
 
-void crypto::password::hash(char* plaintext_password, AccountPassword* out) {
+void crypto::password::hash(std::string_view plaintext_password, AccountPassword* out) {
     // Generate the 32-byte salt and load it into the salt pointer.
     RAND_bytes((unsigned char*)out->salt, SALT_LENGTH);
 
     // Hash the password with the salt and load the resulting hash into out_hash.
     PKCS5_PBKDF2_HMAC(
-        plaintext_password, strlen(plaintext_password),
+        plaintext_password.data(), plaintext_password.length(),
         (unsigned char*)out->salt, SALT_LENGTH,
         ITERATIONS, EVP_sha256(), HASH_LENGTH,
         (unsigned char*)out->hash
     );
 }
 
-bool crypto::password::equal(char* plaintext_password, AccountPassword* hashed_password) {
-    char hash[32];
+bool crypto::password::equal(std::string_view plaintext_password, AccountPassword* hashed_password) {
+    char hash[HASH_LENGTH];
 
     // Hash the plaintext password with the salt.
     PKCS5_PBKDF2_HMAC(
-        plaintext_password, strlen(plaintext_password),
+        plaintext_password.data(), plaintext_password.length(),
         (unsigned char*)hashed_password->salt, SALT_LENGTH,
         ITERATIONS, EVP_sha256(), HASH_LENGTH, (unsigned char*)hash
     );

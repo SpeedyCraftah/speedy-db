@@ -1,6 +1,7 @@
 #include "query.h"
 
 #include "../connections/client.h"
+#include <exception>
 #include <memory>
 #include <regex>
 #include <string>
@@ -282,10 +283,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
             std::string_view password_sv = d["password"];
-            std::string password = {password_sv.begin(), password_sv.end()};
 
             // If username or passwords are too short or are too long.
-            if (!misc::name_string_legal(username) || password.length() > 100 || password.length() < 2) {
+            if (!misc::name_string_legal(username) || password_sv.length() > 100 || password_sv.length() < 2) {
                 send_query_error(socket_data, nonce, query_error::params_invalid);
                 return;
             }
@@ -302,26 +302,21 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            // If username is already taken.
-            if (database_accounts->count(username) != 0) {
-                send_query_error(socket_data, nonce, query_error::account_username_in_use);
-                return;
-            }
-
+            
             DatabasePermissions permissions;
-
+            
             // Deny the permissions by default by setting everything to 0.
             memset(&permissions, 0, sizeof(permissions));
-
+            
             // Apply the hierarchy index.
             permissions.HIERARCHY_INDEX = hierarchy_index;
-
+            
             // Set user-specified permissions, otherwise deny by default.
             simdjson::ondemand::object permissions_object = d["permissions"];
             for (auto permission : permissions_object) {
                 std::string_view key = permission.unescaped_key();
                 bool value = permission.value();
-
+                
                 if (key == "OPEN_CLOSE_TABLES") permissions.OPEN_CLOSE_TABLES = value;
                 else if (key == "CREATE_TABLES") permissions.CREATE_TABLES = value;
                 else if (key == "DELETE_TABLES") permissions.DELETE_TABLES = value;
@@ -332,8 +327,19 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else throw query_error::params_invalid;                
             }
 
+            accounts_mutex.lock();
+
+            // If username is already taken.
+            if (database_accounts->count(username) != 0) {
+                accounts_mutex.unlock();
+                send_query_error(socket_data, nonce, query_error::account_username_in_use);
+                return;
+            }
+
             // Save and load the account.
-            create_database_account((char*)username.c_str(), (char*)password.c_str(), permissions);
+            create_database_account_unlocked(std::move(username), password_sv, permissions);
+
+            accounts_mutex.unlock();
 
             // Send a successful response.
             send_query_response(socket_data, nonce);
@@ -346,19 +352,27 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
 
+            accounts_mutex.lock();
+
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             DatabaseAccount* t_account = account_lookup->second;
-
+            
             // If target account has a higher or same hierarchy index.
-            if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) return query_error(query_error::insufficient_privileges);
+            if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) {
+                accounts_mutex.unlock();
+                return query_error(query_error::insufficient_privileges);
+            }
 
-            delete_database_account(t_account);
+            delete_database_account_unlocked(t_account);
+
+            accounts_mutex.unlock();
 
             // Send a successful response.
             send_query_response(socket_data, nonce);
@@ -369,9 +383,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
 
+            accounts_mutex.lock();
+
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
@@ -390,6 +407,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             permissions.AddMember("OPEN_CLOSE_TABLES", (bool)t_account->permissions.OPEN_CLOSE_TABLES, permissions.GetAllocator());
             permissions.AddMember("TABLE_ADMINISTRATOR", (bool)t_account->permissions.TABLE_ADMINISTRATOR, permissions.GetAllocator());
             permissions.AddMember("HIERARCHY_INDEX", (uint32_t)t_account->permissions.HIERARCHY_INDEX, permissions.GetAllocator());
+
+            accounts_mutex.unlock();
 
             // Send the response.
             send_query_response(socket_data, nonce, permissions);
@@ -410,9 +429,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
+            accounts_mutex.lock();
+
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
@@ -420,6 +442,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Find the table.
             auto table_lookup = open_tables->find(table_name);
             if (table_lookup == open_tables->end()) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
             }
@@ -429,34 +452,43 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If table is internal.
             if (table->is_internal) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
             // Get existing permissions as base.
-            TablePermissions permissions = *get_table_permissions_for_account(table, t_account, false);
+            TablePermissions permissions = *get_table_permissions_for_account_unlocked(table, t_account, false);
 
             // TODO - could use with constexpr too
             // Set user specified permissions.
 
-            simdjson::ondemand::object permissions_object = d["permissions"];
-            for (auto permission : permissions_object) {
-                std::string_view key = permission.unescaped_key();
-                bool value = permission.value();
-                
-                if (key == "VIEW") permissions.VIEW = value;
-                else if (key == "READ") permissions.READ = value;
-                else if (key == "WRITE") permissions.WRITE = value;
-                else if (key == "UPDATE") permissions.UPDATE = value;
-                else if (key == "ERASE") permissions.ERASE = value;
-                else {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
-                    return;
+            try {
+                simdjson::ondemand::object permissions_object = d["permissions"];
+                for (auto permission : permissions_object) {
+                    std::string_view key = permission.unescaped_key();
+                    bool value = permission.value();
+                    
+                    if (key == "VIEW") permissions.VIEW = value;
+                    else if (key == "READ") permissions.READ = value;
+                    else if (key == "WRITE") permissions.WRITE = value;
+                    else if (key == "UPDATE") permissions.UPDATE = value;
+                    else if (key == "ERASE") permissions.ERASE = value;
+                    else {
+                        send_query_error(socket_data, nonce, query_error::params_invalid);
+                        accounts_mutex.unlock();
+                        return;
+                    }
                 }
+            } catch (...) {
+                accounts_mutex.unlock();
+                throw;
             }
 
             // Apply the table permissions to the account.
-            set_table_account_permissions(table, t_account, permissions);
+            set_table_account_permissions_unlocked(table, t_account, permissions);
+
+            accounts_mutex.unlock();
 
             // Send a successful response.
             send_query_response(socket_data, nonce);
@@ -475,9 +507,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
+            accounts_mutex.lock();
+
             // Find the account.
             auto account_lookup = database_accounts->find(username);
             if (account_lookup == database_accounts->end()) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
@@ -485,6 +520,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Find the table.
             auto table_lookup = open_tables->find(table_name);
             if (table_lookup == open_tables->end()) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
             }
@@ -493,13 +529,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             ActiveTable* table = table_lookup->second;
 
             // If user cannot view the table.
-            if (!get_table_permissions_for_account(table, account)->VIEW) {
+            if (!get_table_permissions_for_account_unlocked(table, account)->VIEW) {
+                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
 
             // Retrieve the permissions.
-            const TablePermissions* permissions = get_table_permissions_for_account(table, t_account, false);
+            const TablePermissions* permissions = get_table_permissions_for_account_unlocked(table, t_account, false);
 
             // Construct the account permissions for the table.
             rapidjson::Document data;
@@ -509,6 +546,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             data.AddMember("WRITE", permissions->WRITE, data.GetAllocator());
             data.AddMember("UPDATE", permissions->UPDATE, data.GetAllocator());
             data.AddMember("ERASE", permissions->ERASE, data.GetAllocator());
+
+            accounts_mutex.unlock();
 
             // Send the response.
             send_query_response(socket_data, nonce, data);
@@ -597,7 +636,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
     }
 
     // Get the permissions available for the user in the table.
-    const TablePermissions* table_permissions = get_table_permissions_for_account(table, account);
+    const TablePermissions* table_permissions = get_table_permissions_for_account_unlocked(table, account);
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {

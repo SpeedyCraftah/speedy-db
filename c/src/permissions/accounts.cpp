@@ -12,18 +12,16 @@
 
 std::mutex accounts_mutex;
 
-void create_database_account(char* username, char* password, DatabasePermissions& permissions) {
-    accounts_mutex.lock();
-
+void create_database_account_unlocked(std::string username, std::string_view password, DatabasePermissions& permissions) {
     // Allocate memory for user account.
-    DatabaseAccount* account = (DatabaseAccount*)malloc(sizeof(DatabaseAccount));
+    DatabaseAccount* account = (DatabaseAccount*)calloc(1, sizeof(DatabaseAccount));
     account->active = true;
 
-    // Copy the username (username has already been validated to be less than 33 characters).
-    strcpy(account->username, username);
+    // Copy the username.
+    memcpy(account->username, username.c_str(), username.length() > (sizeof(account->username) - 1) ? (sizeof(account->username) - 1) : username.length());
 
     // Copy the global permissions onto the account.
-    account->permissions = permissions; 
+    account->permissions = permissions;
 
     // Create the password hash and salt.
     crypto::password::hash(password, &account->password);
@@ -41,15 +39,11 @@ void create_database_account(char* username, char* password, DatabasePermissions
     fseek(database_accounts_handle, 0, SEEK_SET);
 
     // Add account to map.
-    (*database_accounts)[username] = account;
-
-    accounts_mutex.unlock();
+    (*database_accounts)[std::move(username)] = account;
 }
 
 // todo - replace old records with new ones
-void delete_database_account(DatabaseAccount* account) {
-    accounts_mutex.lock();
-
+void delete_database_account_unlocked(DatabaseAccount* account) {
     // Seek to account location.
     fseek(database_accounts_handle, account->internal_index, SEEK_SET);
 
@@ -74,8 +68,6 @@ void delete_database_account(DatabaseAccount* account) {
 
     // Free the account from memory.
     free(account);
-
-    accounts_mutex.unlock();
 }
 
 void update_database_account(DatabaseAccount* account, DatabaseAccount new_account) {
@@ -87,7 +79,7 @@ void update_database_account(DatabaseAccount* account, DatabaseAccount new_accou
     accounts_mutex.unlock();
 }
 
-void set_table_account_permissions(ActiveTable* table, DatabaseAccount* account, TablePermissions permissions) {
+void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount* account, TablePermissions permissions) {
     ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
 
     // Prepare the account index for query.
@@ -142,7 +134,7 @@ void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* accou
 const TablePermissions placeholder_table_all_permissions = { 1, 1, 1, 1, 1 };
 const TablePermissions placeholder_table_no_permissions = { 0, 0, 0, 0, 0 };
 
-const TablePermissions* get_table_permissions_for_account(ActiveTable* table, DatabaseAccount* account, bool include_table_admin) {
+const TablePermissions* get_table_permissions_for_account_unlocked(ActiveTable* table, DatabaseAccount* account, bool include_table_admin) {
     // If account is a table administrator, all permissions are granted regardless of table overrides.
     if (include_table_admin && account->permissions.TABLE_ADMINISTRATOR) return &placeholder_table_all_permissions;
 
