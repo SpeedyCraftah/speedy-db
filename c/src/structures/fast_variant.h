@@ -69,8 +69,10 @@ namespace speedystd {
 
     private:
       static constexpr size_t size = std::max({sizeof(Types)...});
+      static constexpr size_t align = std::max({alignof(Types)...});
+
       uint selected_type = 0;
-      char buffer[size];
+      alignas(align) char buffer[size];
 
       template <typename T>
       constexpr inline uint get_selector_for_type() {
