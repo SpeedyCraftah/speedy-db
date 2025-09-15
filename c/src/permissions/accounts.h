@@ -11,7 +11,7 @@ struct AccountPassword {
 
 struct DatabaseAccount {
     bool active;
-    size_t internal_index;
+    long internal_index;
     char username[33] = {0};
     AccountPassword password;
     DatabasePermissions permissions;

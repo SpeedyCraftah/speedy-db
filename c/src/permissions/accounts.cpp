@@ -59,7 +59,7 @@ void delete_database_account_unlocked(DatabaseAccount* account) {
 
     // Remove all table-specific permissions from account.
     NumericType index_u;
-    index_u.unsigned64_raw = account->internal_index;
+    index_u.long64 = account->internal_index;
 
     query_builder::erase_query<1> query(permissions_table);
     query.add_where_condition("index", query.numeric_equal_to(index_u));
@@ -84,7 +84,7 @@ void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount*
 
     // Prepare the account index for query.
     NumericType index_u;
-    index_u.unsigned64_raw = account->internal_index;
+    index_u.long64 = account->internal_index;
 
     // Prepare the permissions for update.
     NumericType permissions_u;
@@ -120,7 +120,7 @@ void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* accou
     ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
 
     NumericType index_u;
-    index_u.unsigned64_raw = account->internal_index;
+    index_u.long64 = account->internal_index;
 
     query_builder::erase_query<2> query(permissions_table);
     query.add_where_condition("table", query.string_equal_to(table->name));

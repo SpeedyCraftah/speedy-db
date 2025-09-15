@@ -82,7 +82,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     // Load the account permissions if table is not internal as internal tables do not have custom permissions.
     if (!this->is_internal) {
         // Create permission map instance.
-        this->permissions = new std::unordered_map<size_t, TablePermissions>();
+        this->permissions = new std::unordered_map<long, TablePermissions>();
 
         // Get permissions table.
         ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
