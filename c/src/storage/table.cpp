@@ -49,7 +49,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
     this->record_size += sizeof(record_header);
 
     // Allocate memory for columns.
-    this->header_columns = (table_column*)calloc(sizeof(table_column) * header.num_columns, 1);
+    this->header_columns = (table_column*)calloc(1, sizeof(table_column) * header.num_columns);
 
     // Read the columns and write them to the struct.
     fread_unlocked(this->header_columns, 1, sizeof(table_column) * header.num_columns, header_handle);
