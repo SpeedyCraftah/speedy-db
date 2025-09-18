@@ -3,14 +3,17 @@ const Net = require("net");
 const EventEmitter = require("events");
 const sleepAsync = util.promisify(setTimeout);
 const crypto = require("crypto");
+const fs = require("fs");
 
 function randomInt(min, max) {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 const keepAlivePacket = new Uint8Array([0, 0, 0, 0]);
+const operationMap = { 0: "TableCreate", 1: "Open", 2: "Describe", 3: "Insert", 4: "FindOne", 5: "FindMany", 6: "EraseMany", 7: "UpdateMany", 8: "Close", 9: "Rebuild", 10: "AccountCreate", 11: "AccountDelete", 12: "TableSetPermissions", 13: "TableGetPermissions", 14: "GetAllTableNames", 15: "GetAllAccountNames", 16: "AccountGetPermissions", 17: "NoOperation" };
+
 module.exports = class SpeedDBClient extends EventEmitter {
-    constructor(config = { socket: { ip: "127.0.0.1", port: 4546 }, auth: {}, cipher: "" }) {
+    constructor(config = { socket: { ip: "127.0.0.1", port: 4546 }, auth: {}, cipher: "", queryLogger: false }) {
         if (!config.socket) config.socket = { ip: "127.0.0.1", port: 4546 };
 
         super();
@@ -28,6 +31,10 @@ module.exports = class SpeedDBClient extends EventEmitter {
         if (config.cipher) {
             this.cipher = config.cipher;
             this.encrypted = true;
+        }
+
+        if (config.queryLogger) {
+            this.queryLoggerStream = fs.createWriteStream('query-log.txt', { flags: 'w' });
         }
     }
 
@@ -128,6 +135,11 @@ module.exports = class SpeedDBClient extends EventEmitter {
     }
 
     _send_query(data) {
+        // console.log("Q DBG", `op=${data.o}`, `data=${JSON.stringify(data.d)}`);
+        if (this.queryLoggerStream) {
+            this.queryLoggerStream.write(`[${operationMap[data.o]}] ` + JSON.stringify(data).replace(/{/g,'{ ').replace(/}/g,' }').replace(/:/g,': ').replace(/,/g,', ') + "\n");
+        }
+
         // Generate a random unique identifier.
         let nonce;
         do {
@@ -272,6 +284,10 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
             this.socket.end();
             this.socket.destroy();
+
+            if (this.queryLoggerStream) {
+                this.queryLoggerStream.end();
+            }
 
             resolve();
         });
