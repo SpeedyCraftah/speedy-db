@@ -142,7 +142,18 @@ class ActiveTable {
                         return (NumericType*)(record->data + table->columns.find(column_name)->second->buffer_offset);
                     }
 
-                    // TODO - add operator to get strings
+                    std::string get_dynamic(std::string_view column_name) {
+                        hashed_entry* entry = (hashed_entry*)(record->data + table->columns.find(column_name)->second->buffer_offset);
+
+                        // Create the empty string buffer.
+                        std::string str_buffer;
+                        str_buffer.resize(entry->size);
+
+                        // Read the data into the string.
+                        pread(table->dynamic_handle, &str_buffer[0], entry->size, entry->record_location + sizeof(dynamic_record));
+
+                        return std::move(str_buffer);
+                    }
             };
 
             public:
@@ -152,15 +163,18 @@ class ActiveTable {
                 record_header* current_record;
 
                 inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : table(tbl), query(q), iterator(table->begin()), current_record(*iterator) {}
-                inline  __attribute__((always_inline)) specific_data_iterator operator++() {
+
+                specific_data_iterator operator++() {
                     while (!this->iterator.complete) {
+                        ++this->iterator;
                         record_header* record = *this->iterator;
+
                         if (this->table->verify_record_conditions_match(record, query->conditions, query->conditions_count)) {
                             current_record = record;
-                            ++this->iterator;
                             break;
-                        } else ++this->iterator;
+                        }
                     }
+
                     return *this;
                 }
 
@@ -226,7 +240,10 @@ class ActiveTable {
         }
 
         inline specific_data_iterator specific_begin(query_compiler::CompiledFindQuery* query) {
-            return specific_data_iterator(this, query);
+            specific_data_iterator i = specific_data_iterator(this, query);
+            if (!i.iterator.complete && !this->verify_record_conditions_match(i.current_record, query->conditions, query->conditions_count)) i.operator++();
+
+            return i;
         }
 
         inline bulk_data_iterator bulk_begin() {

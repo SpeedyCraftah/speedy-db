@@ -90,6 +90,11 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
         query_builder::find_query<1> query(permissions_table);
         query.add_where_condition("table", query.string_equal_to(this->name));
 
+        /* for future debugging */
+        // bool oopsie = false;
+        // std::vector<std::tuple<std::string, long, uint8_t>> elements;
+
+        permissions_table->op_mutex.lock();
         for (auto it = permissions_table->specific_begin(query.build()); !it; ++it) {
             auto record = *it;
             
@@ -105,6 +110,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
             
             (*this->permissions)[index] = *(TablePermissions*)&permissions;
         }
+        permissions_table->op_mutex.unlock();
     }
 
     // Close handles which are not needed.
