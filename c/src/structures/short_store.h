@@ -31,7 +31,8 @@ namespace speedystd {
         inline auto begin() const {
             #if !defined(__OPTIMIZE__)
                 if (_is_single) {
-                    throw std::runtime_error("Debug build check: calling code tried to run iterator in single mode!");
+                    puts("Debug build check: calling code tried to run iterator in single mode!");
+                    std::terminate();
                 }
             #endif
             

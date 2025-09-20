@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
+#include <exception>
 #include <stdexcept>
 #include <iostream>
 #include <type_traits>
@@ -28,7 +30,8 @@ namespace speedystd {
       inline T& set_as() {
         #if !defined(__OPTIMIZE__)
           if (selected_type != 0) {
-            throw std::runtime_error("Debug build check: calling code tried to set the variant type twice!");
+            puts("Debug build check: calling code tried to set the variant type twice!");
+            std::terminate();
           }
         #endif
   
@@ -42,7 +45,8 @@ namespace speedystd {
       inline T& as() {
         #if !defined(__OPTIMIZE__)
           if (selected_type != get_selector_for_type<T>()) {
-            throw std::runtime_error("Debug build check: calling code tried to get variant not in use!");
+            puts("Debug build check: calling code tried to get variant not in use!");
+            std::terminate();
           }
         #endif
   
