@@ -8,7 +8,6 @@ Insertions are extremely slow past a certain point, and so should only be used i
 
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
 #include <vector>
 
 namespace speedystd {
