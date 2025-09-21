@@ -1,5 +1,6 @@
 #pragma once
 
+#include <netinet/in.h>
 #include <pthread.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
@@ -48,7 +49,7 @@ struct client_socket_data {
     encryption_t encryption;
     pthread_t thread_id;
     int socket_id;
-    char address[16];
+    char address[INET_ADDRSTRLEN];
     config_t config;
     version_t version;  
     uint64_t last_packet_time = 0;

@@ -19,17 +19,16 @@ void accept_connections() {
 
     // Start the keepalive monitoring thread.
     pthread_t ka_thread_id;
-    int thread_status = pthread_create(
-        &ka_thread_id, NULL, keepalive_thread_handle, NULL
-    );
+    int thread_status = pthread_create(&ka_thread_id, NULL, keepalive_thread_handle, NULL);
+    pthread_detach(ka_thread_id);
     log("Socket keep-alive monitoring thread has been started");
 
     struct sockaddr client_address;
-    int client_address_length = sizeof(client_address);
+    socklen_t client_address_length = sizeof(client_address);
 
     while (1) {
         // Blocks until a connection has been made and populates the client_address struct.
-        int client_id = accept(server_socket_id, (struct sockaddr*)&client_address, (socklen_t*)&client_address_length);
+        int client_id = accept(server_socket_id, (struct sockaddr*)&client_address, &client_address_length);
         if (client_id == -1) {
             logerr("Connection attempt has failed (errno %d)", errno);
             continue;
@@ -53,7 +52,7 @@ void accept_connections() {
             socket_data = new client_socket_data;
             socket_data->socket_id = client_id;
             socket_data->last_packet_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-            strcpy(inet_ntoa(addr->sin_addr), socket_data->address);
+            inet_ntop(AF_INET, &(addr->sin_addr), socket_data->address, INET_ADDRSTRLEN);
     
             log("A connection has been established with socket handle %d and IP %s", client_id, socket_data->address);
     
@@ -63,9 +62,8 @@ void accept_connections() {
 
         // Create thread for connection.
         // Grab connection data from map.
-        int thread_status = pthread_create(
-            &socket_data->thread_id, NULL, client_connection_handle, socket_data
-        );
+        int thread_status = pthread_create(&socket_data->thread_id, NULL, client_connection_handle, socket_data);
+        pthread_detach(socket_data->thread_id);
     }
 }
 
