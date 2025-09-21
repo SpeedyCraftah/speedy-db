@@ -26,6 +26,7 @@ namespace speedystd {
                     guard_mutex& parent;
             };
 
+            guard_mutex() {}
             guard_mutex(T init_value) {
                 value = std::move(init_value);
             }
