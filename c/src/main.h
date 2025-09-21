@@ -5,8 +5,7 @@
 #include <openssl/pem.h>
 
 extern int server_socket_id;
-extern std::unordered_map<int, client_socket_data*>* socket_connections;
-extern std::unordered_map<std::string, DatabaseAccount*>* database_accounts;
+extern std::unordered_map<std::string, DatabaseAccount*> database_accounts;
 extern FILE* database_accounts_handle;
 
 namespace server_config {

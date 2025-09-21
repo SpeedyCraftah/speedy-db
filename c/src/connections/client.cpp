@@ -282,8 +282,8 @@ void* client_connection_handle(void* arg) {
         std::string password = std::string((std::string_view)auth_object["password"]);
 
         // Find the user account.
-        auto account_lookup = database_accounts->find(username);
-        if (account_lookup == database_accounts->end()) {
+        auto account_lookup = database_accounts.find(username);
+        if (account_lookup == database_accounts.end()) {
             logerr("Socket with handle %d has been terminated due to providing an invalid username.", socket_id);
 
             rapidjson::Document data_object;

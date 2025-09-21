@@ -39,7 +39,7 @@ void create_database_account_unlocked(std::string username, std::string_view pas
     fseek(database_accounts_handle, 0, SEEK_SET);
 
     // Add account to map.
-    (*database_accounts)[std::move(username)] = account;
+    database_accounts[std::move(username)] = account;
 }
 
 // todo - replace old records with new ones
@@ -53,9 +53,9 @@ void delete_database_account_unlocked(DatabaseAccount* account) {
     fseek(database_accounts_handle, 0, SEEK_SET);
 
     // Remove the account from the map.
-    database_accounts->erase(std::string(account->username));
+    database_accounts.erase(std::string(account->username));
 
-    ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+    ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
     // Remove all table-specific permissions from account.
     NumericType index_u;
@@ -80,7 +80,7 @@ void update_database_account(DatabaseAccount* account, DatabaseAccount new_accou
 }
 
 void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount* account, TablePermissions permissions) {
-    ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+    ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
     // Prepare the account index for query.
     NumericType index_u;
@@ -117,7 +117,7 @@ void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount*
 }
 
 void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* account) {
-    ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+    ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
     NumericType index_u;
     index_u.long64 = account->internal_index;

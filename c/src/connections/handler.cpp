@@ -33,7 +33,7 @@ void accept_connections() {
         }
 
         // If the maximum connections is limited and has been exhausted.
-        if (server_config::max_connections != 0 && socket_connections->size() >= server_config::max_connections) {
+        if (server_config::max_connections != 0 && socket_connections.size() >= server_config::max_connections) {
             logerr("A connection attempt has been refused due to no more connection slots");
             close(client_id);
             continue;
@@ -50,7 +50,7 @@ void accept_connections() {
         log("A connection has been established with socket handle %d and IP %s", client_id, socket_data->address);
 
         // Add to map.
-        (*socket_connections)[client_id] = socket_data;
+        (socket_connections)[client_id] = socket_data;
 
         // Create thread for connection.
         // Grab connection data from map.
@@ -62,13 +62,13 @@ void accept_connections() {
 
 void terminate_socket(int handle) {
     // If socket is already terminated, return.
-    if (socket_connections->count(handle) == 0) return;
+    if (socket_connections.count(handle) == 0) return;
 
     // Wait a second for a possible error message to send.
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Clear any potential socket data.
-    client_socket_data* data = (*socket_connections)[handle];
+    client_socket_data* data = (socket_connections)[handle];
     if (data->encryption.enabled) {
         OPENSSL_free(data->encryption.aes_ctx);
     }
@@ -78,7 +78,7 @@ void terminate_socket(int handle) {
     delete data;
 
     // Remove from map.
-    socket_connections->erase(handle);
+    socket_connections.erase(handle);
 
     // Close the TCP connection.
     close(handle);

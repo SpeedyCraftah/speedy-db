@@ -14,7 +14,7 @@ void* keepalive_thread_handle(void* args) {
         // Temporary solution to prevent segmentation faults when removing elements.
         client_socket_data* socket_to_delete = nullptr;
 
-        for (auto& socket : *socket_connections) {
+        for (auto& socket : socket_connections) {
             // If there has been no packets even after several keep-alive messages.
             if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - socket.second->last_packet_time > 60000 + 60000 + 30000) {
                 logerr("Socket with handle %d has been terminated as it has not replied to multiple keep-alive packets", socket.second->socket_id);

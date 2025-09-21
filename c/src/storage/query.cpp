@@ -150,7 +150,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             table_open_mutex.lock();
 
             // Check if table is already open.
-            if (open_tables->contains(name)) {
+            if (open_tables.contains(name)) {
                 table_open_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::table_already_open);
                 return;
@@ -164,7 +164,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             }
 
             // Open the table.
-            (*open_tables)[name] = new ActiveTable(name.c_str(), false);
+            open_tables[name] = new ActiveTable(name.c_str(), false);
 
             table_open_mutex.unlock();
 
@@ -330,7 +330,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             accounts_mutex.lock();
 
             // If username is already taken.
-            if (database_accounts->count(username) != 0) {
+            if (database_accounts.count(username) != 0) {
                 accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::account_username_in_use);
                 return;
@@ -355,8 +355,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             accounts_mutex.lock();
 
             // Find the account.
-            auto account_lookup = database_accounts->find(username);
-            if (account_lookup == database_accounts->end()) {
+            auto account_lookup = database_accounts.find(username);
+            if (account_lookup == database_accounts.end()) {
                 accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
@@ -386,8 +386,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             accounts_mutex.lock();
 
             // Find the account.
-            auto account_lookup = database_accounts->find(username);
-            if (account_lookup == database_accounts->end()) {
+            auto account_lookup = database_accounts.find(username);
+            if (account_lookup == database_accounts.end()) {
                 accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
@@ -432,16 +432,16 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             accounts_mutex.lock();
 
             // Find the account.
-            auto account_lookup = database_accounts->find(username);
-            if (account_lookup == database_accounts->end()) {
+            auto account_lookup = database_accounts.find(username);
+            if (account_lookup == database_accounts.end()) {
                 accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             // Find the table.
-            auto table_lookup = open_tables->find(table_name);
-            if (table_lookup == open_tables->end()) {
+            auto table_lookup = open_tables.find(table_name);
+            if (table_lookup == open_tables.end()) {
                 accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
@@ -510,16 +510,16 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             accounts_mutex.lock();
 
             // Find the account.
-            auto account_lookup = database_accounts->find(username);
-            if (account_lookup == database_accounts->end()) {
+            auto account_lookup = database_accounts.find(username);
+            if (account_lookup == database_accounts.end()) {
                 accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
             // Find the table.
-            auto table_lookup = open_tables->find(table_name);
-            if (table_lookup == open_tables->end()) {
+            auto table_lookup = open_tables.find(table_name);
+            if (table_lookup == open_tables.end()) {
                 accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::table_not_open);
                 return;
@@ -600,7 +600,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             accounts.SetArray();
 
             // Iterate over accounts map.
-            for (auto& element : *database_accounts) {
+            for (auto& element : database_accounts) {
                 // Push the accout name to the array.
                 accounts.PushBack(rapidjson_string_view(element.first), accounts.GetAllocator());
             }
@@ -622,12 +622,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
     std::string name = {name_sv.begin(), name_sv.end()};
 
     // Check if table is open.
-    if (open_tables->count(name) == 0) {
+    if (open_tables.count(name) == 0) {
         send_query_error(socket_data, nonce, query_error::table_not_open);
         return;
     }
 
-    ActiveTable* table = (*open_tables)[name];
+    ActiveTable* table = open_tables[name];
 
     // If user is querying an internal table.
     // Only exception to this is if the build is in debug mode since it is helpful to be able to query internal tables.
@@ -693,8 +693,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             table_open_mutex.lock();
 
             // Close the table.
-            delete (*open_tables)[name];
-            open_tables->erase(name);
+            delete open_tables[name];
+            open_tables.erase(name);
 
             table_open_mutex.unlock();
 

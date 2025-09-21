@@ -25,9 +25,9 @@
 // Global variable holding the socket ID.
 int server_socket_id;
 int connections_size = 0;
-std::unordered_map<int, client_socket_data*>* socket_connections;
-std::unordered_map<std::string, ActiveTable*>* open_tables;
-std::unordered_map<std::string, DatabaseAccount*>* database_accounts;
+std::unordered_map<int, client_socket_data*> socket_connections;
+std::unordered_map<std::string, ActiveTable*> open_tables;
+std::unordered_map<std::string, DatabaseAccount*> database_accounts;
 FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
@@ -46,7 +46,7 @@ void on_terminate() {
 
     // Close all file handles and finalise table operations.
     fclose(database_accounts_handle);
-    for (auto t : *open_tables) {
+    for (auto t : open_tables) {
         delete t.second;
     }
 
@@ -173,11 +173,6 @@ int main(int argc, char** args) {
     std::signal(SIGINT, [](int signum) { exit(0); });
     std::signal(SIGTERM, [](int signum) { exit(0); });
 
-    // Create structures.
-    socket_connections = new std::unordered_map<int, client_socket_data*>();
-    open_tables = new std::unordered_map<std::string, ActiveTable*>();
-    database_accounts = new std::unordered_map<std::string, DatabaseAccount*>();
-
     if (server_config::root_account_enabled) {
         // Add the root account to the list.
         DatabaseAccount* account = (DatabaseAccount*)malloc(sizeof(DatabaseAccount));
@@ -193,11 +188,11 @@ int main(int argc, char** args) {
         crypto::password::hash(server_config::root_password, &account->password);
 
         // Add to map.
-        (*database_accounts)[std::string("root")] = account;
+        database_accounts[std::string("root")] = account;
     }
 
     // Open the internal permissions table.
-    (*open_tables)["--internal-table-permissions"] = new ActiveTable("--internal-table-permissions", true);
+    open_tables["--internal-table-permissions"] = new ActiveTable("--internal-table-permissions", true);
 
     // Load the database accounts into memory.
     // Open the file containing the database accounts.
@@ -220,10 +215,10 @@ int main(int argc, char** args) {
         memcpy(account, &loaded_account, sizeof(DatabaseAccount));
 
         // Add it to the map.
-        (*database_accounts)[std::string(account->username)] = account;
+        database_accounts[std::string(account->username)] = account;
     }
 
-    if (database_accounts->size() != 0) log("Loaded %d database user accounts into memory", database_accounts->size());
+    if (database_accounts.size() != 0) log("Loaded %d database user accounts into memory", database_accounts.size());
     else if (!server_config::root_account_enabled) {
         logwarn("Did not find any database user accounts - root account is also not enabled");
         logwarn("You will be unable to connect and perform any queries, including addition of new user accounts");

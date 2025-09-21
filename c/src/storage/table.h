@@ -272,4 +272,4 @@ bool table_exists(const char* name);
 void create_table(const char* table_name, table_column* columns, int length);
 table_rebuild_statistics rebuild_table(ActiveTable** table);
 
-extern std::unordered_map<std::string, ActiveTable*>* open_tables;
+extern std::unordered_map<std::string, ActiveTable*> open_tables;

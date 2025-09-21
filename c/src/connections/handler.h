@@ -5,7 +5,7 @@
 
 #define connection_limit 1
 
-extern std::unordered_map<int, client_socket_data*>* socket_connections;
+extern std::unordered_map<int, client_socket_data*> socket_connections;
 
 void* keep_alive_handle(void* arg);
 void terminate_socket(int handle);

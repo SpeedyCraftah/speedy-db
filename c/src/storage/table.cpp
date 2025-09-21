@@ -85,7 +85,7 @@ ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_
         this->permissions = new std::unordered_map<long, TablePermissions>();
 
         // Get permissions table.
-        ActiveTable* permissions_table = (*open_tables)["--internal-table-permissions"];
+        ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
         query_builder::find_query<1> query(permissions_table);
         query.add_where_condition("table", query.string_equal_to(this->name));
@@ -325,7 +325,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
     std::string safe_table_name = std::string(table->header.name);
 
     // Close the table.
-    open_tables->erase(table->header.name);
+    open_tables.erase(table->header.name);
     delete table;
 
     // Delete old data files.
@@ -341,7 +341,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
 
     // Reopen the table and replace variable with new pointer.
     *table_var = new ActiveTable(safe_table_name.c_str(), is_internal);
-    (*open_tables)[table->header.name] = *table_var;
+    open_tables[table->header.name] = *table_var;
 
     free(header);
 
