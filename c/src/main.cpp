@@ -25,7 +25,6 @@
 // Global variable holding the socket ID.
 int server_socket_id;
 int connections_size = 0;
-std::unordered_map<int, client_socket_data*> socket_connections;
 std::unordered_map<std::string, ActiveTable*> open_tables;
 std::unordered_map<std::string, DatabaseAccount*> database_accounts;
 FILE* database_accounts_handle = nullptr;
