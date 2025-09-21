@@ -16,9 +16,8 @@ void accept_connections() {
 
     // Start the keepalive monitoring thread.
     pthread_t ka_thread_id;
-    int thread_status = pthread_create(
-        &ka_thread_id, NULL, keepalive_thread_handle, NULL
-    );
+    int thread_status = pthread_create(&ka_thread_id, NULL, keepalive_thread_handle, NULL);
+    pthread_detach(ka_thread_id);
     log("Socket keep-alive monitoring thread has been started");
 
     struct sockaddr client_address;
@@ -54,9 +53,8 @@ void accept_connections() {
 
         // Create thread for connection.
         // Grab connection data from map.
-        int thread_status = pthread_create(
-            &socket_data->thread_id, NULL, client_connection_handle, socket_data
-        );
+        int thread_status = pthread_create(&socket_data->thread_id, NULL, client_connection_handle, socket_data);
+        pthread_detach(socket_data->thread_id);
     }
 }
 
