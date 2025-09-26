@@ -1,11 +1,12 @@
 #pragma once
 #include "connections/client.h"
+#include "misc/template_utils.h"
 #include "permissions/accounts.h"
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 
 extern int server_socket_id;
-extern std::unordered_map<std::string, DatabaseAccount*> database_accounts;
+extern std::unordered_map<std::string, DatabaseAccount*, MapStringViewHash, MapStringViewEqual> database_accounts;
 extern FILE* database_accounts_handle;
 
 namespace server_config {

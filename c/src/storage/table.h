@@ -10,6 +10,7 @@
 #include "../logging/logger.h"
 #include "table-reusable-types.h"
 #include <map>
+#include "../misc/template_utils.h"
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
@@ -69,7 +70,7 @@ struct hashed_entry {
 
 class ActiveTable {
     public:
-        ActiveTable(const char* table_name, bool is_internal);
+        ActiveTable(std::string_view table_name, bool is_internal);
         ~ActiveTable();
 
         bool find_one_record(query_compiler::CompiledFindQuery* query, rapidjson::Document& result);
@@ -268,8 +269,12 @@ class ActiveTable {
 };
 
 // External table functions.
-bool table_exists(const char* name);
-void create_table(const char* table_name, table_column* columns, int length);
+bool table_exists(std::string_view name);
+void create_table(std::string_view table_name, table_column* columns, int length);
 table_rebuild_statistics rebuild_table(ActiveTable** table);
 
-extern std::unordered_map<std::string, ActiveTable*> open_tables;
+// Table cache.
+extern std::unordered_map<std::string, ActiveTable*, MapStringViewHash, MapStringViewEqual> open_tables;
+
+// Global table locks.
+extern std::mutex table_open_mutex;

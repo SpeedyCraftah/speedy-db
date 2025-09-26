@@ -12,8 +12,8 @@ struct DatabasePermissions {
     // Multiple accounts can also have the same hierarchy index, where such accounts will not be able to modify each other.
     uint32_t HIERARCHY_INDEX;
 
-    // Allows the account to be able to open unloaded tables, as well as close them on the database.
-    bool OPEN_CLOSE_TABLES : 1;
+    // Removed: Allows the account to be able to open unloaded tables, as well as close them on the database.
+    bool _RESERVED : 1;
 
     // Allows the account to be able to create tables on the database.
     bool CREATE_TABLES : 1;

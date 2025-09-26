@@ -38,8 +38,6 @@ types type_string_to_int(std::string_view& type) {
     else return (types)-1;
 }
 
-// TODO - optimisation needs to be looked into
-
 void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
     rapidjson::Document response_object;
     response_object.SetObject();
@@ -88,12 +86,58 @@ void send_query_error(client_socket_data* socket_data, int nonce, query_compiler
     send_json(socket_data, response_object);
 }
 
-// TODO - convert all to this
 #define query_error(error) send_query_error(socket_data, nonce, error)
 
-std::mutex table_open_mutex;
+ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_data* socket_data, uint nonce, std::string_view name) {
+    // If table is already open, else open it.
+    auto table_lookup = open_tables.find(name);
+    if (table_lookup != open_tables.end()) {
+        return table_lookup->second;
+    } else {
+        // If name is invalid.
+        if (!misc::name_string_legal(name)) {
+            send_query_error(socket_data, nonce, query_error::params_invalid);
+            return nullptr;
+        }
 
-// TODO - remove op-o conversion in js
+        // If name starts with a reserved sequence.
+        if (name.starts_with("--internal")) {
+            send_query_error(socket_data, nonce, query_error::name_reserved);
+            return nullptr;
+        }
+
+        std::lock_guard<std::mutex> lock(table_open_mutex);
+
+        // Check if table exists.
+        if (!table_exists(name)) {
+            send_query_error(socket_data, nonce, query_error::table_not_found);
+            return nullptr;
+        }
+
+        // Open the table.
+        ActiveTable* table = new ActiveTable(name, false);
+        open_tables[std::string(name)] = table;
+
+        log("Table %s has been loaded into memory", table->header.name);
+
+        return table;
+    }
+}
+
+// Wrapper which automatically resolves the table name from the payload.
+inline ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_data* socket_data, uint nonce, simdjson::ondemand::object& d) {
+    std::string_view name;
+    if (d["table"].get(name) != simdjson::error_code::SUCCESS) {
+        send_query_error(socket_data, nonce, query_error::params_invalid);
+        return nullptr;
+    }
+
+    return _ensure_table_open(account, socket_data, nonce, name);
+}
+
+#define ensure_table_open(str_or_object) _ensure_table_open(account, socket_data, nonce, str_or_object)
+
+
 void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
     int socket_id = socket_data->socket_id;
     bool error_text = socket_data->config.error_text;
@@ -122,69 +166,19 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::open_table: {
-            if (!account->permissions.OPEN_CLOSE_TABLES) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
-                return;
-            }
-
-            // TODO - try not to use string
-            std::string_view name_sv;
-            if (d["table"].get(name_sv) != simdjson::error_code::SUCCESS) {
-                send_query_error(socket_data, nonce, query_error::params_invalid);
-                return;
-            }
-            std::string name = {name_sv.begin(), name_sv.end()};
-
-            // If name is invalid.
-            if (!misc::name_string_legal(name)) {
-                send_query_error(socket_data, nonce, query_error::params_invalid);
-                return;
-            }
-
-            // If name starts with a reserved sequence.
-            if (name.starts_with("--internal")) {
-                send_query_error(socket_data, nonce, query_error::name_reserved);
-                return;
-            }
-
-            table_open_mutex.lock();
-
-            // Check if table is already open.
-            if (open_tables.contains(name)) {
-                table_open_mutex.unlock();
-                send_query_error(socket_data, nonce, query_error::table_already_open);
-                return;
-            }
-
-            // Check if table exists.
-            if (!table_exists(name.c_str())) {
-                table_open_mutex.unlock();
-                send_query_error(socket_data, nonce, query_error::table_not_found);
-                return;
-            }
-
-            // Open the table.
-            open_tables[name] = new ActiveTable(name.c_str(), false);
-
-            table_open_mutex.unlock();
-
-            log("Table %s has been loaded into memory", name.c_str());
-
-            send_query_response(socket_data, nonce);
+            if (ensure_table_open(d) != nullptr) send_query_response(socket_data, nonce);
             return;
         }
 
         case query_ops::create_table: {
             if (!account->permissions.CREATE_TABLES) return query_error(query_error::insufficient_privileges);
 
-            std::string_view name_sv;
+            std::string_view name;
             simdjson::ondemand::object columns_object;
             if (
-                d["name"].get(name_sv) != simdjson::error_code::SUCCESS || 
+                d["name"].get(name) != simdjson::error_code::SUCCESS || 
                 d["columns"].get(columns_object) != simdjson::error_code::SUCCESS
             ) return query_error(query_error::params_invalid);
-
-            std::string name = {name_sv.begin(), name_sv.end()};
 
             if (columns_object.is_empty()) {
                 send_query_error(socket_data, nonce, query_error::params_invalid);
@@ -210,8 +204,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            if (table_exists(name.c_str())) {
-                send_query_error(socket_data, nonce, query_error::table_conflict);
+            if (table_exists(name)) {
+                send_query_error(socket_data, nonce, query_error::table_name_in_use);
                 return;
             }
 
@@ -220,13 +214,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             std::unique_ptr<table_column[]> columns(new table_column[columns_object_count]);
             for (auto item : columns_object) {
-                // C++ regex doesn't support string views :(
-                std::string_view key_sv = item.unescaped_key();
-                std::string key = {key_sv.begin(), key_sv.end()};
-                if (
-                    !std::regex_match(key, std::regex("^[a-z_]+$")) ||
-                    key.length() > 32 || key.length() < 2
-                ) {
+                std::string_view column_name = item.unescaped_key();
+                if (!misc::column_name_string_legal(column_name)) {
                     send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
@@ -254,15 +243,15 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (type == types::long64) new_column.size = 8;
 
                 // Copy name.
-                strcpy(new_column.name, key.c_str());
-                new_column.name_length = key.length();
+                memcpy(new_column.name, column_name.data(), column_name.length());
+                new_column.name_length = column_name.length();
 
                 columns[iteration] = new_column;
                 ++iteration;
             }
 
             // Create table.
-            create_table(name.c_str(), columns.get(), columns_object_count);
+            create_table(name, columns.get(), columns_object_count);
             
             send_query_response(socket_data, nonce);
             return;
@@ -317,8 +306,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 std::string_view key = permission.unescaped_key();
                 bool value = permission.value();
                 
-                if (key == "OPEN_CLOSE_TABLES") permissions.OPEN_CLOSE_TABLES = value;
-                else if (key == "CREATE_TABLES") permissions.CREATE_TABLES = value;
+                if (key == "CREATE_TABLES") permissions.CREATE_TABLES = value;
                 else if (key == "DELETE_TABLES") permissions.DELETE_TABLES = value;
                 else if (key == "CREATE_ACCOUNTS") permissions.CREATE_ACCOUNTS = value;
                 else if (key == "UPDATE_ACCOUNTS") permissions.UPDATE_ACCOUNTS = value;
@@ -404,7 +392,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             permissions.AddMember("UPDATE_ACCOUNTS", (bool)t_account->permissions.UPDATE_ACCOUNTS, permissions.GetAllocator());
             permissions.AddMember("CREATE_TABLES", (bool)t_account->permissions.CREATE_TABLES, permissions.GetAllocator());
             permissions.AddMember("DELETE_TABLES", (bool)t_account->permissions.DELETE_TABLES, permissions.GetAllocator());
-            permissions.AddMember("OPEN_CLOSE_TABLES", (bool)t_account->permissions.OPEN_CLOSE_TABLES, permissions.GetAllocator());
             permissions.AddMember("TABLE_ADMINISTRATOR", (bool)t_account->permissions.TABLE_ADMINISTRATOR, permissions.GetAllocator());
             permissions.AddMember("HIERARCHY_INDEX", (uint32_t)t_account->permissions.HIERARCHY_INDEX, permissions.GetAllocator());
 
@@ -418,10 +405,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         case query_ops::set_table_account_privileges: {
             if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(query_error::insufficient_privileges);
 
-            std::string_view username_sv = d["username"];
-            std::string username = {username_sv.begin(), username_sv.end()};
-            std::string_view table_name_sv = d["table"];
-            std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
+            std::string_view username = d["username"];
+            std::string_view table_name = d["table"];
 
             // If username is reserved by being called root.
             if (username == "root") {
@@ -429,30 +414,22 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
-            accounts_mutex.lock();
+            std::lock_guard<std::mutex> account_mutex_lock(accounts_mutex);
 
             // Find the account.
             auto account_lookup = database_accounts.find(username);
             if (account_lookup == database_accounts.end()) {
-                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
-
-            // Find the table.
-            auto table_lookup = open_tables.find(table_name);
-            if (table_lookup == open_tables.end()) {
-                accounts_mutex.unlock();
-                send_query_error(socket_data, nonce, query_error::table_not_open);
-                return;
-            }
-
+            
             DatabaseAccount* t_account = account_lookup->second;
-            ActiveTable* table = table_lookup->second;
+
+            ActiveTable* table = ensure_table_open(table_name);
+            if (table == nullptr) return;
 
             // If table is internal.
             if (table->is_internal) {
-                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
@@ -460,35 +437,25 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Get existing permissions as base.
             TablePermissions permissions = *get_table_permissions_for_account_unlocked(table, t_account, false);
 
-            // TODO - could use with constexpr too
             // Set user specified permissions.
-
-            try {
-                simdjson::ondemand::object permissions_object = d["permissions"];
-                for (auto permission : permissions_object) {
-                    std::string_view key = permission.unescaped_key();
-                    bool value = permission.value();
-                    
-                    if (key == "VIEW") permissions.VIEW = value;
-                    else if (key == "READ") permissions.READ = value;
-                    else if (key == "WRITE") permissions.WRITE = value;
-                    else if (key == "UPDATE") permissions.UPDATE = value;
-                    else if (key == "ERASE") permissions.ERASE = value;
-                    else {
-                        send_query_error(socket_data, nonce, query_error::params_invalid);
-                        accounts_mutex.unlock();
-                        return;
-                    }
+            simdjson::ondemand::object permissions_object = d["permissions"];
+            for (auto permission : permissions_object) {
+                std::string_view key = permission.unescaped_key();
+                bool value = permission.value();
+                
+                if (key == "VIEW") permissions.VIEW = value;
+                else if (key == "READ") permissions.READ = value;
+                else if (key == "WRITE") permissions.WRITE = value;
+                else if (key == "UPDATE") permissions.UPDATE = value;
+                else if (key == "ERASE") permissions.ERASE = value;
+                else {
+                    send_query_error(socket_data, nonce, query_error::params_invalid);
+                    return;
                 }
-            } catch (...) {
-                accounts_mutex.unlock();
-                throw;
             }
 
             // Apply the table permissions to the account.
             set_table_account_permissions_unlocked(table, t_account, permissions);
-
-            accounts_mutex.unlock();
 
             // Send a successful response.
             send_query_response(socket_data, nonce);
@@ -496,41 +463,31 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::fetch_account_table_permissions: {
-            std::string_view username_sv = d["username"];
-            std::string username = {username_sv.begin(), username_sv.end()};
-            std::string_view table_name_sv = d["table"];
-            std::string table_name = {table_name_sv.begin(), table_name_sv.end()};
+            std::string_view username = d["username"];
+            std::string_view table_name = d["table"];
 
             // If table name starts with a reserved sequence.
-            if (table_name.find("--internal") == 0) {
+            if (table_name.starts_with("--internal")) {
                 send_query_error(socket_data, nonce, query_error::name_reserved);
                 return;
             }
 
-            accounts_mutex.lock();
+            std::lock_guard<std::mutex> account_mutex_lock(accounts_mutex);
 
             // Find the account.
             auto account_lookup = database_accounts.find(username);
             if (account_lookup == database_accounts.end()) {
-                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::username_not_found);
                 return;
             }
 
-            // Find the table.
-            auto table_lookup = open_tables.find(table_name);
-            if (table_lookup == open_tables.end()) {
-                accounts_mutex.unlock();
-                send_query_error(socket_data, nonce, query_error::table_not_open);
-                return;
-            }
-
             DatabaseAccount* t_account = account_lookup->second;
-            ActiveTable* table = table_lookup->second;
+
+            ActiveTable* table = ensure_table_open(table_name);
+            if (table == nullptr) return;
 
             // If user cannot view the table.
             if (!get_table_permissions_for_account_unlocked(table, account)->VIEW) {
-                accounts_mutex.unlock();
                 send_query_error(socket_data, nonce, query_error::insufficient_privileges);
                 return;
             }
@@ -546,8 +503,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             data.AddMember("WRITE", permissions->WRITE, data.GetAllocator());
             data.AddMember("UPDATE", permissions->UPDATE, data.GetAllocator());
             data.AddMember("ERASE", permissions->ERASE, data.GetAllocator());
-
-            accounts_mutex.unlock();
 
             // Send the response.
             send_query_response(socket_data, nonce, data);
@@ -579,7 +534,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                     if (name == "." || name == "..") continue;
 
                     // If table is an internal table.
-                    if (name.find("--internal-") == 0) continue;
+                    if (name.starts_with("--internal-")) continue;
 
                     // Push table name to the array.
                     tables.PushBack(rapidjson_string_view(name), tables.GetAllocator());
@@ -617,17 +572,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     // OPs that require table past here.
 
-
-    std::string_view name_sv = d["table"];
-    std::string name = {name_sv.begin(), name_sv.end()};
-
-    // Check if table is open.
-    if (open_tables.count(name) == 0) {
-        send_query_error(socket_data, nonce, query_error::table_not_open);
-        return;
-    }
-
-    ActiveTable* table = open_tables[name];
+    ActiveTable* table = ensure_table_open(d);
+    if (table == nullptr) return;
 
     // If user is querying an internal table.
     // Only exception to this is if the build is in debug mode since it is helpful to be able to query internal tables.
@@ -685,20 +631,17 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::close_table: {
-            if (!account->permissions.OPEN_CLOSE_TABLES) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
-                return;
-            }
-
             table_open_mutex.lock();
+            
+            std::string owned_name(table->name);
 
             // Close the table.
-            delete open_tables[name];
-            open_tables.erase(name);
+            delete open_tables[owned_name];
+            open_tables.erase(owned_name);
 
             table_open_mutex.unlock();
 
-            log("Table %s has been unloaded from memory", name.c_str());
+            log("Table %s has been unloaded from memory", owned_name.c_str());
 
             send_query_response(socket_data, nonce);
             return;

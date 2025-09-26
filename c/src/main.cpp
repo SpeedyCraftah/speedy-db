@@ -16,6 +16,7 @@
 #include "crypto/crypto.h"
 #include "logging/logger.h"
 #include "connections/handler.h"
+#include "misc/template_utils.h"
 #include "permissions/accounts.h"
 #include <cstdlib>
 #include "misc/files.h"
@@ -25,13 +26,14 @@
 // Global variable holding the socket ID.
 int server_socket_id;
 int connections_size = 0;
-std::unordered_map<std::string, ActiveTable*> open_tables;
-std::unordered_map<std::string, DatabaseAccount*> database_accounts;
+std::unordered_map<int, client_socket_data*> socket_connections;
+std::unordered_map<std::string, ActiveTable*, MapStringViewHash, MapStringViewEqual> open_tables;
+std::unordered_map<std::string, DatabaseAccount*, MapStringViewHash, MapStringViewEqual> database_accounts;
 FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
-int server_config::version::major = 7;
-int server_config::version::minor = 3;
+int server_config::version::major = 8;
+int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
 bool server_config::root_account_enabled = false;
