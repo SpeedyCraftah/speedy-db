@@ -16,15 +16,16 @@
 // TODO - add mutex
 // TODO - preallocate record header for each handle instead of mallocing and freeing on every query
 
-ActiveTable::ActiveTable(const char* table_name, bool is_internal = false) : is_internal(is_internal) {
-    std::string name_string = std::string(table_name);
-    if (!misc::name_string_legal(name_string)) {
+ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) : is_internal(is_internal) {
+    if (!misc::name_string_legal(table_name)) {
         logerr("Safety check fail! Table with an unsafe name was almost opened");
         std::terminate();
     }
 
+    std::string path = server_config::data_directory;
+    path += table_name;
+    
     // Create the data paths.
-    std::string path = server_config::data_directory + table_name;
     std::string meta_path = path + "/meta.bin";
     std::string data_path = path + "/data.bin";
     std::string dynamic_path = path + "/dynamic.bin";
@@ -146,11 +147,11 @@ ActiveTable::data_iterator ActiveTable::data_iterator::operator++() {
     return *this;
 }
 
+std::mutex table_open_mutex;
 std::mutex misc_op_mutex;
 
-bool table_exists(const char* name) {
-    std::string name_string = std::string(name);
-    if (!misc::name_string_legal(name_string)) {
+bool table_exists(std::string_view name) {
+    if (!misc::name_string_legal(name)) {
         logerr("Safety check fail! Table with an unsafe name was almost checked for existance");
         std::terminate();
     }
@@ -159,16 +160,15 @@ bool table_exists(const char* name) {
 
     misc_op_mutex.lock();
     std::string path = server_config::data_directory;
-    path += name_string;
+    path += name;
     int state = stat(path.c_str(), &info);
     misc_op_mutex.unlock();
 
     return state == 0;
 }
 
-void create_table(const char* table_name, table_column* columns, int length) {
-    std::string name_string = std::string(table_name);
-    if (!misc::name_string_legal(name_string)) {
+void create_table(std::string_view table_name, table_column* columns, int length) {
+    if (!misc::name_string_legal(table_name)) {
         logerr("Safety check fail! Table with an unsafe name was almost created");
         std::terminate();
     }
@@ -176,7 +176,9 @@ void create_table(const char* table_name, table_column* columns, int length) {
     misc_op_mutex.lock();
 
     // Create the data path.
-    std::string path = server_config::data_directory + name_string;
+    std::string path = server_config::data_directory;
+    path += table_name;
+
     mkdir(path.c_str(), 0777);
 
     // Append a slash for future paths.
@@ -209,7 +211,7 @@ void create_table(const char* table_name, table_column* columns, int length) {
     header.num_columns = length;
 
     // Copy name.
-    strcpy(header.name, table_name);
+    memcpy(header.name, table_name.data(), table_name.length());
 
     // Write header to file.
     fwrite_unlocked(&header, 1, sizeof(table_header), handle);
