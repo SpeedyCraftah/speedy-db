@@ -136,6 +136,25 @@ module.exports = class SpeedDBClient extends EventEmitter {
         };
     }
 
+    _compose_packet(data) {
+        let d = Buffer.from(JSON.stringify(data));
+
+        if (this.encrypted) {
+            // Encrypt the data before sending.
+            d = this._encrypt(d);
+        }
+
+        let packet = new Uint8Array([0, 0, 0, 0, ...d, 0]);
+        const length = packet.length - 4;
+
+        packet[0] = length & 255;
+        packet[1] = (length >> 8) & 255;
+        packet[2] = (length >> 16) & 255;
+        packet[3] = (length >> 24) & 255;
+
+        return packet;
+    }
+
     _send_query(data) {
         // Generate a random unique identifier.
         let nonce;
@@ -152,23 +171,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
         }
 
         return new Promise(async (resolve, reject) => {
-            // Transform the data into a compliant format.
-            let d = Buffer.from(JSON.stringify(data));
-
-            if (this.encrypted) {
-                // Encrypt the data before sending.
-                d = this._encrypt(d);
-            }
-
-            let packet = new Uint8Array([
-                0, 0, 0, 0, ...d, 0
-            ]);
-            const length = packet.length - 4;
-
-            packet[0] = length & 255;
-            packet[1] = (length >> 8) & 255;
-            packet[2] = (length >> 16) & 255;
-            packet[3] = (length >> 24) & 255;
+            const packet = this._compose_packet(data);
 
             const timeout = setTimeout(() => {
                 delete this.activeQueries[nonce];
@@ -181,11 +184,16 @@ module.exports = class SpeedDBClient extends EventEmitter {
         });
     }
 
-    _on_message(raw_data) {
+    _from_packet(raw_data) {
         let data;
-
         if (this.encrypted) data = JSON.parse(this._decrypt(raw_data).toString());
         else data = JSON.parse(raw_data.toString());
+
+        return data;
+    }
+
+    _on_message(raw_data) {
+        const data = this._from_packet(raw_data);
 
         // If data has no nonce, it is a global message.
         if (!data.n) {
@@ -306,7 +314,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
                 // Send handshake.
                 let handshakeData = {
-                    version: { major: 8, minor: 0 },
+                    version: { major: 9, minor: 0 },
                     options: { error_text: true }
                 };
 
@@ -315,7 +323,6 @@ module.exports = class SpeedDBClient extends EventEmitter {
                         algorithm: this.cipher
                     };
                 }
-                if (this.auth) handshakeData["auth"] = this.auth;
                 
                 this.socket.write(JSON.stringify(handshakeData));
 
@@ -355,6 +362,23 @@ module.exports = class SpeedDBClient extends EventEmitter {
                 }
 
                 this.serverVersion = handshakeConfirmation.version;
+
+                // Start the extended handshake (post encryption).
+
+                let extendedHandshakeData = {};
+                if (this.auth) extendedHandshakeData["auth"] = this.auth;
+                this.socket.write(this._compose_packet(extendedHandshakeData));
+
+                let extendedHandshakeConfirmation = await new Promise((resolve) => {
+                    this.socket.once("data", d => {
+                        resolve(this._from_packet(d.subarray(4, d.length - 1)));
+                    });
+                });
+
+                if (extendedHandshakeConfirmation.e) {
+                    reject(extendedHandshakeConfirmation.d.t);
+                    return;
+                }
 
                 this.socket.on("data", this._on_data.bind(this));
 

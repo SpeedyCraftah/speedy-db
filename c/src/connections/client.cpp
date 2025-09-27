@@ -278,7 +278,7 @@ void* client_connection_handle(void* arg) {
         }
 
         // Get the auth details from the handshake.
-        simdjson::ondemand::object auth_object = data["auth"];
+        /*simdjson::ondemand::object auth_object = data["auth"];
 
         // Have to be std::string's since the map requires a string, and password for convenience.
         std::string username = std::string((std::string_view)auth_object["username"]);
@@ -328,7 +328,7 @@ void* client_connection_handle(void* arg) {
 
         // Authentication has passed at this point.
         // Add the account to the socket.
-        socket_data->account = account;
+        socket_data->account = account;*/
         
 
         rapidjson::Document handshake_object;
@@ -381,8 +381,6 @@ void* client_connection_handle(void* arg) {
 
         socket_data->version.major = version_major;
         socket_data->version.minor = version_minor;
-
-        log("Socket with handle %d and username '%s' performed a successful handshake with client version %d.%d", socket_id, account->username, socket_data->version.major, socket_data->version.minor);
     
         // Send back handshake success.
         rapidjson::Document version_server_object;
@@ -429,6 +427,119 @@ void* client_connection_handle(void* arg) {
 
             send_json_handshake(socket_data, res_object);
         }
+
+        // Authentication/extended handshake stage.
+        // This stage is different since the payload is structured as typical post-auth messages, and is also encrypted (if applicable).
+
+        incoming_bytes = recv(socket_id, &incoming_buffer, 1000, 0);
+        if (incoming_bytes == -1) throw std::exception();
+
+        // If data is empty, treat as voluntary close request.
+        if (incoming_bytes == 0) {
+            log("Received terminate signal from socket handle %d during handshake - closing connection", socket_data->socket_id);
+            goto break_socket;
+        }
+
+        char* auth_handshake_buffer;
+        size_t auth_handshake_size;
+        uint32_t specified_length = *(uint32_t*)incoming_buffer;
+
+        // Check for correct specified length and for expected terminator at end of message.
+        if (specified_length + 4 != incoming_bytes) throw std::exception();
+        if (incoming_buffer[incoming_bytes - 1] != 0) throw std::exception();
+
+        // Either decrypt buffer first or directly set the message pointer.
+        if (socket_data->encryption.enabled) {
+            if (specified_length < AES_IV_SIZE) throw std::exception();
+
+            auth_handshake_buffer = (char*)malloc(specified_length + simdjson::SIMDJSON_PADDING);
+            size_t decrypted_size = crypto::aes256::decrypt_buffer(
+                socket_data->encryption.aes_ctx,
+                socket_data->encryption.aes_secret,
+                incoming_buffer + 4,
+                specified_length - 1,
+                auth_handshake_buffer
+            );
+
+            auth_handshake_buffer[decrypted_size] = 0;
+            auth_handshake_size = decrypted_size;
+        } else {
+            auth_handshake_size = specified_length - 1;
+            auth_handshake_buffer = incoming_buffer + 4;
+        }
+
+        try {
+            // Parse the data.
+            data = socket_data->parser.iterate(auth_handshake_buffer, auth_handshake_size, HANDSHAKE_BUFFER_SIZE - 4);
+
+            simdjson::ondemand::object auth_object = data["auth"];
+
+            // Extended handshake is decrypted and starts here.
+
+            std::string_view username = auth_object["username"];
+            std::string_view password = auth_object["password"];
+
+            // Find the user account.
+            auto account_lookup = database_accounts.find(username);
+            if (account_lookup == database_accounts.end()) {
+                logerr("Socket with handle %d has been terminated due to providing an invalid username.", socket_id);
+                
+                rapidjson::Document object;
+                object.SetObject();
+                object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
+                
+                rapidjson::Document data_object;
+                data_object.SetObject();
+                data_object.AddMember(rj_query_keys::error_code, query_error::invalid_account_credentials, object.GetAllocator());
+                if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::invalid_account_credentials], object.GetAllocator());
+                object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
+
+                // Send a regular message here as it is the extended handshake.
+                send_json(socket_data, object);
+                
+                free(auth_handshake_buffer);
+                goto break_socket;
+            }
+
+            // Get the account.
+            DatabaseAccount* account = account_lookup->second;
+
+            // Check if the provided password matches the account password hash.
+            if (!crypto::password::equal(password, &account->password)) {
+                logerr("Socket with handle %d has been terminated due to providing an invalid password.", socket_id);
+                
+                rapidjson::Document object;
+                object.SetObject();
+                object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
+                
+                rapidjson::Document data_object;
+                data_object.SetObject();
+                data_object.AddMember(rj_query_keys::error_code, query_error::invalid_account_credentials, object.GetAllocator());
+                if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::invalid_account_credentials], object.GetAllocator());
+                object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
+
+                send_json(socket_data, object);
+                
+                free(auth_handshake_buffer);
+                goto break_socket;
+            }
+
+            // Authentication has passed at this point.
+            // Add the account to the socket.
+            socket_data->account = account;
+
+            // Send a successful handshake response.
+            rapidjson::Document res_object;
+            res_object.SetObject();
+            send_json(socket_data, res_object);
+
+            log("Socket with handle %d and username '%s' performed a successful handshake with client version %d.%d", socket_id, account->username, socket_data->version.major, socket_data->version.minor);
+        } catch (...) {
+            if (socket_data->encryption.enabled) free(auth_handshake_buffer);
+            throw;
+        }
+
+        if (socket_data->encryption.enabled) free(auth_handshake_buffer);
     } catch(std::exception& e) {
         logerr("Socket with handle %d has been terminated due to an invalid handshake", socket_id);
         
