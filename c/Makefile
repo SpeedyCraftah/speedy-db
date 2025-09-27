@@ -16,7 +16,7 @@ all: debug
 debug: CXXFLAGS = $(FLAGS) -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1
 debug: $(BIN_DIR)/debug
 
-production: CXXFLAGS = $(FLAGS) -Wall -Ofast -ffat-lto-objects -flto
+production: CXXFLAGS = $(FLAGS) -Wall -Ofast -march=native -ffat-lto-objects -flto
 production: $(BIN_DIR)/production
 
 # Linking
