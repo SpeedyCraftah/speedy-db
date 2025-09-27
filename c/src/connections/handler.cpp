@@ -17,6 +17,11 @@ void accept_connections() {
     // Start the keepalive monitoring thread.
     pthread_t ka_thread_id;
     int thread_status = pthread_create(&ka_thread_id, NULL, keepalive_thread_handle, NULL);
+    if (thread_status != 0) {
+        logerr("Failed to create keepalive thread (errno %d)", thread_status);
+        exit(1);
+    }
+
     pthread_detach(ka_thread_id);
     log("Socket keep-alive monitoring thread has been started");
 
@@ -54,6 +59,14 @@ void accept_connections() {
         // Create thread for connection.
         // Grab connection data from map.
         int thread_status = pthread_create(&socket_data->thread_id, NULL, client_connection_handle, socket_data);
+        if (thread_status != 0) {
+            logerr("Failed to create thread for connection with socket handle %d (errno %d), hence it has been refused", client_id, thread_status);
+            socket_connections.erase(client_id);
+            delete socket_data;
+            close(client_id);
+            continue;
+        }
+
         pthread_detach(socket_data->thread_id);
     }
 }

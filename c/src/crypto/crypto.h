@@ -16,8 +16,8 @@ namespace crypto {
     }
 
     namespace aes256 {
-        void encrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, const char* output);
-        size_t decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, const char* output);
+        void encrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, char* output);
+        size_t decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, char* output);
 
         inline size_t encode_res_length(size_t length) {
             return 16 + (length / 16) * 16;

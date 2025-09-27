@@ -91,7 +91,7 @@ void crypto::random_bytes(void* dest, size_t size) {
     
 }
 
-void crypto::aes256::encrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, const char* output) {
+void crypto::aes256::encrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, char* output) {
     int outlen1;
     int outlen2;
 
@@ -100,7 +100,7 @@ void crypto::aes256::encrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const 
     EVP_EncryptFinal(ctx, (unsigned char*)output + outlen1, &outlen2);
 }
 
-size_t crypto::aes256::decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, const char* output) {
+size_t crypto::aes256::decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, char* output) {
     int outlen1;
     int outlen2;
 

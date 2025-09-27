@@ -1,6 +1,7 @@
 #include "client.h"
 #include "../main.h"
 #include <cstdint>
+#include <cstdlib>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <stdlib.h>
@@ -135,7 +136,6 @@ inline void send_json_handshake(client_socket_data* socket_data, rapidjson::Docu
 // true = disconnect the socket.
 // false = continue.
 bool process_message(const char* buffer, uint32_t data_size, client_socket_data* socket_data) {
-    int socket_id = socket_data->socket_id;
     bool error_text = socket_data->config.error_text;
 
     simdjson::ondemand::document data = socket_data->parser.iterate(buffer, data_size, data_size + simdjson::SIMDJSON_PADDING);
@@ -197,6 +197,10 @@ void* client_connection_handle(void* arg) {
     // Allocate space for buffer.
     // TODO - reuse buffer, perhaps by malloc.
     char incoming_buffer[HANDSHAKE_BUFFER_SIZE];
+
+    uint8_t* buffer = nullptr;
+    uint8_t* buffer_ptr = nullptr;
+    uint32_t remaining_size;
 
     int incoming_bytes;
 
@@ -456,10 +460,6 @@ void* client_connection_handle(void* arg) {
 
         goto break_socket;
     }
-
-    uint8_t* buffer;
-    uint8_t* buffer_ptr;
-    uint32_t remaining_size;
 
     while (1) {
         // Grab the size header from the packet.
