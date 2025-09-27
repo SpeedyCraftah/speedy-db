@@ -9,6 +9,7 @@ function randomInt(min, max) {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+const AES_IV_SIZE = 16;
 const keepAlivePacket = new Uint8Array([0, 0, 0, 0]);
 const operationMap = { 0: "TableCreate", 1: "Open", 2: "Describe", 3: "Insert", 4: "FindOne", 5: "FindMany", 6: "EraseMany", 7: "UpdateMany", 8: "Close", 9: "Rebuild", 10: "AccountCreate", 11: "AccountDelete", 12: "TableSetPermissions", 13: "TableGetPermissions", 14: "GetAllTableNames", 15: "GetAllAccountNames", 16: "AccountGetPermissions", 17: "NoOperation" };
 
@@ -39,16 +40,17 @@ module.exports = class SpeedDBClient extends EventEmitter {
     }
 
     _encrypt(buffer) {
-        const cipher = crypto.createCipheriv('aes-256-cbc', this.secret, this.client_iv);
+        const iv = crypto.randomBytes(AES_IV_SIZE);
+        const cipher = crypto.createCipheriv('aes-256-cbc', this.secret, iv);
         let encrypted = cipher.update(buffer);
-        encrypted = Buffer.concat([encrypted, cipher.final()]);
+        encrypted = Buffer.concat([iv, encrypted, cipher.final()]);
 
         return encrypted;
     }
 
     _decrypt(buffer) {
-        const cipher = crypto.createDecipheriv('aes-256-cbc', this.secret, this.server_iv);
-        let decrypted = cipher.update(buffer);
+        const cipher = crypto.createDecipheriv('aes-256-cbc', this.secret, buffer.slice(0, AES_IV_SIZE));
+        let decrypted = cipher.update(buffer.slice(AES_IV_SIZE));
         decrypted = Buffer.concat([decrypted, cipher.final()]);
 
         return decrypted;
@@ -135,11 +137,6 @@ module.exports = class SpeedDBClient extends EventEmitter {
     }
 
     _send_query(data) {
-        // console.log("Q DBG", `op=${data.o}`, `data=${JSON.stringify(data.d)}`);
-        if (this.queryLoggerStream) {
-            this.queryLoggerStream.write(`[${operationMap[data.o]}] ` + JSON.stringify(data).replace(/{/g,'{ ').replace(/}/g,' }').replace(/:/g,': ').replace(/,/g,', ') + "\n");
-        }
-
         // Generate a random unique identifier.
         let nonce;
         do {
@@ -149,6 +146,10 @@ module.exports = class SpeedDBClient extends EventEmitter {
         // Reserve the nonce value.
         this.activeQueries[nonce] = null;
         data["n"] = nonce;
+
+        if (this.queryLoggerStream) {
+            this.queryLoggerStream.write(`[${operationMap[data.o]}] ` + JSON.stringify(data).replace(/{/g,'{ ').replace(/}/g,' }').replace(/:/g,': ').replace(/,/g,', ') + "\n");
+        }
 
         return new Promise(async (resolve, reject) => {
             // Transform the data into a compliant format.
@@ -340,8 +341,6 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
                     const secret = dh.computeSecret(Buffer.from(handshakeConfirmation.cipher.public_key, "base64"), null);
                     this.secret = secret.subarray(0, 32);
-                    this.client_iv = Buffer.from(handshakeConfirmation.cipher.initial_iv, "base64");
-                    this.server_iv = Buffer.from(handshakeConfirmation.cipher.initial_iv, "base64");
 
                     let encryptionConfirmation = await new Promise((resolve) => {
                         this.socket.once("data", d => {

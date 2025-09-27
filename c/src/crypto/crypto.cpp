@@ -190,22 +190,27 @@ void crypto::random_bytes(void* dest, int size) {
     }
 }
 
-void crypto::aes256::encrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, char* output) {
+// Encrypts the buffer and includes an IV at the beginning.
+void crypto::aes256::encrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* input, size_t input_size, char* output) {
     int outlen1;
     int outlen2;
 
-    EVP_EncryptInit(ctx, EVP_aes_256_cbc(), (unsigned char*)key, (unsigned char*)iv);
-    EVP_EncryptUpdate(ctx, (unsigned char*)output, &outlen1, (unsigned char*)input, input_size);
-    EVP_EncryptFinal(ctx, (unsigned char*)output + outlen1, &outlen2);
+    // Generate a random IV at the beginning.
+    crypto::random_bytes(output, AES_IV_SIZE);
+
+    // Carry on with the rest of the encryption.
+    EVP_EncryptInit(ctx, EVP_aes_256_cbc(), (unsigned char*)key, (unsigned char*)output);
+    EVP_EncryptUpdate(ctx, (unsigned char*)output + AES_IV_SIZE, &outlen1, (unsigned char*)input, input_size);
+    EVP_EncryptFinal(ctx, (unsigned char*)output + AES_IV_SIZE + outlen1, &outlen2);
 }
 
-size_t crypto::aes256::decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* iv, const char* input, size_t input_size, char* output) {
+// Decrypts the buffer, taking the first AES_IV_SIZE bytes as IV.
+size_t crypto::aes256::decrypt_buffer(EVP_CIPHER_CTX* ctx, const char* key, const char* input, size_t input_size, char* output) {
     int outlen1;
     int outlen2;
 
-    EVP_DecryptInit(ctx, EVP_aes_256_cbc(), (unsigned char*)key, (unsigned char*)iv);
-    
-    EVP_DecryptUpdate(ctx, (unsigned char*)output, &outlen1, (unsigned char*)input, input_size);
+    EVP_DecryptInit(ctx, EVP_aes_256_cbc(), (unsigned char*)key, (unsigned char*)input);
+    EVP_DecryptUpdate(ctx, (unsigned char*)output, &outlen1, (unsigned char*)input + AES_IV_SIZE, input_size - AES_IV_SIZE);
     EVP_DecryptFinal(ctx, (unsigned char*)output + outlen1, &outlen2);
 
     return outlen1 + outlen2;

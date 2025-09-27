@@ -41,8 +41,6 @@ struct client_socket_data {
     struct encryption_t {
         bool enabled = false;
         char aes_secret[32];
-        char aes_client_iv[16];
-        char aes_server_iv[16];
         EVP_CIPHER_CTX* aes_ctx;
     };
 
@@ -85,7 +83,8 @@ enum query_error {
     username_not_found,
     insufficient_privileges,
     too_many_conditions,
-    too_many_columns
+    too_many_columns,
+    unexpected_packet_size
 };
 
 extern const rapidjson::GenericStringRef<char> query_error_text[];

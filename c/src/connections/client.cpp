@@ -55,7 +55,8 @@ const rapidjson::GenericStringRef<char> query_error_text[] = {
     "The account username you provided does not belong to any account.",
     "This account does not have access to the privileges required to perform this operation.",
     "Your query has too many WHERE conditions and cannot be processed due to efficiency reasons.",
-    "Your query defines too many columns, reduce the number of columns and try again."
+    "Your query defines too many columns, reduce the number of columns and try again.",
+    "The total size of the sent data does not satisfy the minimum length required based on the connection settings. This could be because the IV wasn't included in the length with encryption enabled."
 };
 
 // A function which sends data to the socket across a TCP stream which supports
@@ -90,7 +91,6 @@ void send_res(client_socket_data* socket_data, const char* data, uint32_t raw_le
         crypto::aes256::encrypt_buffer(
             socket_data->encryption.aes_ctx,
             socket_data->encryption.aes_secret,
-            socket_data->encryption.aes_server_iv,
             data, raw_length, (char*)(buffer + sizeof(uint32_t))
         );
     } else {
@@ -343,16 +343,11 @@ void* client_connection_handle(void* arg) {
                 socket_data->encryption.enabled = true;
                 dh = crypto::dh::create_session();
 
-                // Generate an initial AES IV value for both sides.
-                crypto::random_bytes(socket_data->encryption.aes_server_iv, 16);
-                memcpy(socket_data->encryption.aes_client_iv, socket_data->encryption.aes_server_iv, 16);
-
                 rapidjson::Document cipher_object;
                 cipher_object.SetObject();
                 cipher_object.AddMember("public_key", crypto::dh::export_public_key(dh), handshake_object.GetAllocator());
                 cipher_object.AddMember("prime", crypto::dh::export_prime(dh), handshake_object.GetAllocator());
                 cipher_object.AddMember("generator", 2, handshake_object.GetAllocator());
-                cipher_object.AddMember("initial_iv", base64::quick_encode(socket_data->encryption.aes_server_iv, 16), handshake_object.GetAllocator());
 
                 handshake_object.AddMember("cipher", cipher_object, handshake_object.GetAllocator());
             } else throw std::exception();
@@ -474,6 +469,25 @@ void* client_connection_handle(void* arg) {
         // If remaining size is 0, ignore as it is a keep-alive test response.
         if (remaining_size == 0) continue;
 
+        // If encryption is enabled, check if we have enough space for at least an IV.
+        if (socket_data->encryption.enabled && remaining_size < AES_IV_SIZE) {
+            logerr("Socket with handle %d has been terminated due to the encrypted packet not containing at least the IV amount of bytes", socket_id);
+
+            rapidjson::Document object;
+            object.SetObject();
+            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
+            
+            rapidjson::Document data_object;
+            data_object.SetObject();
+            data_object.AddMember(rj_query_keys::error_code, query_error::packet_size_exceeded, object.GetAllocator());
+            if (error_text) data_object.AddMember(rj_query_keys::data, query_error_text[query_error::packet_size_exceeded], object.GetAllocator());
+            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
+
+            send_json(socket_data, object);
+
+            goto break_socket;
+        }
+
         // Check if the packet is too large.
         if (remaining_size > MAX_PACKET_SIZE) {
             logerr("Socket with handle %d has been terminated due to packet exceeding max size", socket_id);
@@ -564,9 +578,10 @@ void* client_connection_handle(void* arg) {
             // Decrypt the buffer.
             size_t decrypt_size = crypto::aes256::decrypt_buffer(
                 socket_data->encryption.aes_ctx,
-                socket_data->encryption.aes_secret, 
-                socket_data->encryption.aes_client_iv, 
-                (char*)buffer, size - 1, output_buffer
+                socket_data->encryption.aes_secret,
+                (char*)buffer,
+                size - 1,
+                output_buffer
             );
 
             actual_data_size = decrypt_size;
