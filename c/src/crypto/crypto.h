@@ -7,12 +7,14 @@
 #include <string>
 #include "../permissions/accounts.h"
 
+#define MAX_DH_KEY_DERIVE_SIZE 32
+
 namespace crypto {
     namespace dh {
-        DH* create_session();
-        std::string export_prime(DH* dh);
-        std::string export_public_key(DH* dh);
-        char* compute_secret(DH* dh, const std::string& foreign_key);
+        EVP_PKEY* create_session();
+        std::string export_prime(EVP_PKEY* local_key);
+        std::string export_public_key(EVP_PKEY* local_key);
+        std::unique_ptr<uint8_t> compute_secret(EVP_PKEY* local_key, const std::string_view raw_foreign_key);
     }
 
     namespace aes256 {
@@ -29,5 +31,5 @@ namespace crypto {
         bool equal(std::string_view plaintext_password, AccountPassword* hashed_password);
     };
 
-    void random_bytes(void* dest, size_t size);
+    void random_bytes(void* dest, int size);
 };
