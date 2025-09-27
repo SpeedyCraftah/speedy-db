@@ -276,61 +276,7 @@ void* client_connection_handle(void* arg) {
             
             goto break_socket;
         }
-
-        // Get the auth details from the handshake.
-        /*simdjson::ondemand::object auth_object = data["auth"];
-
-        // Have to be std::string's since the map requires a string, and password for convenience.
-        std::string username = std::string((std::string_view)auth_object["username"]);
-        std::string password = std::string((std::string_view)auth_object["password"]);
-
-        // Find the user account.
-        auto account_lookup = database_accounts.find(username);
-        if (account_lookup == database_accounts.end()) {
-            logerr("Socket with handle %d has been terminated due to providing an invalid username.", socket_id);
-
-            rapidjson::Document data_object;
-            data_object.SetObject();
-            data_object.AddMember(rj_query_keys::error_code, query_error::invalid_account_credentials, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
-
-            rapidjson::Document object;
-            object.SetObject();
-            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
-            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
-
-            send_json_handshake(socket_data, object);
-            
-            goto break_socket;
-        }
-
-        // Get the account.
-        DatabaseAccount* account = account_lookup->second;
-
-        // Check if the provided password matches the account password hash.
-        if (!crypto::password::equal((char*)password.c_str(), &account->password)) {
-            logerr("Socket with handle %d has been terminated due to providing an invalid password.", socket_id);
-
-            rapidjson::Document data_object;
-            data_object.SetObject();
-            data_object.AddMember(rj_query_keys::error_code, query_error::invalid_account_credentials, data_object.GetAllocator());
-            if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[query_error::invalid_account_credentials], data_object.GetAllocator());
-
-            rapidjson::Document object;
-            object.SetObject();
-            object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
-            object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
-
-            send_json_handshake(socket_data, object);
-            
-            goto break_socket;
-        }
-
-        // Authentication has passed at this point.
-        // Add the account to the socket.
-        socket_data->account = account;*/
         
-
         rapidjson::Document handshake_object;
         handshake_object.SetObject();
 
