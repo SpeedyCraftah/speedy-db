@@ -44,7 +44,7 @@ I've added an AppArmor profile in `~/c/` which is locked down to access only the
 - Query planner query which can be used to debug the execution plan of a query.
 
 # Supported platforms
-- Linux X86 (no windows yet sorry).
+- Linux X86 (no windows yet, but Node.JS client driver supports practically every environment that Node.JS supports).
   - ARM64 should work fine but there may be compatibility issues with RapidJSON & slight performance drops with xxHash & simdjson. 
 - Little-endian byte order CPU (big-endian may work just fine but this has been untested).
 
