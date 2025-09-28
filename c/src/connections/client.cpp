@@ -391,7 +391,7 @@ void* client_connection_handle(void* arg) {
         uint32_t specified_length = *(uint32_t*)incoming_buffer;
 
         // Check for correct specified length and for expected terminator at end of message.
-        if (specified_length + 4 != incoming_bytes) throw std::exception();
+        if (specified_length + 4 != (uint32_t)incoming_bytes) throw std::exception();
         if (incoming_buffer[incoming_bytes - 1] != 0) throw std::exception();
 
         // Either decrypt buffer first or directly set the message pointer.

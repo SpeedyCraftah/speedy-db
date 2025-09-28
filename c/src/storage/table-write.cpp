@@ -42,7 +42,12 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
             memcpy(dynam_record->data, column_data.data.data(), data_length);
 
             // Write the dynamic record.
-            write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + data_length);
+            ssize_t write_result = write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + data_length);
+            if (write_result != (ssize_t)(sizeof(dynamic_record) + data_length)) {
+                /* Will be improved after disk read overhaul */
+                logerr("Error or incorrect number of bytes returned from write for dynamic string");
+                exit(1);
+            }
 
             free(dynam_record);
         } 
@@ -96,7 +101,12 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
 
         // Write the updated records in bulk with precise handle (if any).
         if (changes_made) {
-            pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
+            ssize_t write_result = pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
+            if (write_result != (ssize_t)(available * this->record_size)) {
+                /* Will be improved after disk read overhaul */
+                logerr("Error or incorrect number of bytes returned from write for dynamic string");
+                exit(1);
+            }
         }
     }
 
@@ -156,12 +166,22 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                             dynamic_record column_header;
 
                             // Read the string block header.
-                            pread(this->dynamic_handle, &column_header, sizeof(dynamic_record), entry->record_location);
+                            ssize_t pread_result = pread(this->dynamic_handle, &column_header, sizeof(dynamic_record), entry->record_location);
+                            if (pread_result != sizeof(dynamic_record)) {
+                                /* Will be improved after disk read overhaul */
+                                logerr("Error or incorrect number of bytes returned from pread for dynamic string");
+                                exit(1);
+                            }
 
                             // If new data can fit in current block.
                             if (update.new_value.size() <= column_header.physical_size - sizeof(dynamic_record)) {
                                 // Write the new string.
-                                pwrite(this->dynamic_handle, update.new_value.data(), update.new_value.size(), entry->record_location + sizeof(dynamic_record));
+                                ssize_t pwrite_result = pwrite(this->dynamic_handle, update.new_value.data(), update.new_value.size(), entry->record_location + sizeof(dynamic_record));
+                                if (pwrite_result != (ssize_t)update.new_value.size()) {
+                                    /* Will be improved after disk read overhaul */
+                                    logerr("Error or incorrect number of bytes returned from pwrite for dynamic string");
+                                    exit(1);
+                                }
                             } 
                             
                             // Needs relocation.
@@ -175,7 +195,12 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                                 memcpy(dynam_record->data, update.new_value.data(), update.new_value.size());
 
                                 // Write the new data.
-                                write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + update.new_value.size());
+                                ssize_t write_result = write(this->dynamic_handle, dynam_record, sizeof(dynamic_record) + update.new_value.size());
+                                if (write_result != (ssize_t)(sizeof(dynamic_record) + update.new_value.size())) {
+                                    /* Will be improved after disk read overhaul */
+                                    logerr("Error or incorrect number of bytes returned from write for dynamic string");
+                                    exit(1);
+                                }
 
                                 // Update the record data.
                                 entry->record_location = dynam_record->record_location;
@@ -195,7 +220,12 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
         }
 
         if (changes_made) {
-            pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
+            ssize_t pwrite_result = pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
+            if (pwrite_result != (ssize_t)(available * this->record_size)) {
+                /* Will be improved after disk read overhaul */
+                logerr("Error or incorrect number of bytes returned from pwrite for record updates");
+                exit(1);
+            }
         }
     }
 
