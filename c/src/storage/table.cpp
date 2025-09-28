@@ -45,7 +45,11 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     this->dynamic_handle = open(dynamic_path.c_str(), O_RDWR | O_CREAT, 0666);
 
     // Read the header.
-    fread_unlocked(&this->header, 1, sizeof(table_header), header_handle);
+    size_t fread_result = fread_unlocked(&this->header, 1, sizeof(table_header), header_handle);
+    if (fread_result != sizeof(table_header)) {
+        logerr("Error or incorrect number of bytes returned from fread_unlocked for table header");
+        exit(1);
+    }
 
     this->record_size += sizeof(record_header);
 
@@ -53,10 +57,14 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     this->header_columns = (table_column*)calloc(1, sizeof(table_column) * header.num_columns);
 
     // Read the columns and write them to the struct.
-    fread_unlocked(this->header_columns, 1, sizeof(table_column) * header.num_columns, header_handle);
+    fread_result = fread_unlocked(this->header_columns, 1, sizeof(table_column) * header.num_columns, header_handle);
+    if (fread_result != sizeof(table_column) * header.num_columns) {
+        logerr("Error or incorrect number of bytes returned from fread_unlocked for table columns");
+        exit(1);
+    }
 
     // Load the columns to the map.
-    for (int i = 0; i < this->header.num_columns; i++) {
+    for (uint32_t i = 0; i < this->header.num_columns; i++) {
         table_column& column = this->header_columns[i];
 
         // Keep index order intact.
@@ -262,13 +270,15 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
     fseek(new_data_handle, 0, SEEK_END);
 
     while (true) {
-        size_t header_location = ftell(table->data_handle);
-
         // Read the header of the record.
-        int fields_read = fread_unlocked(header, 1, table->record_size, table->data_handle);
+        size_t fields_read = fread_unlocked(header, 1, table->record_size, table->data_handle);
+        if (fields_read == (size_t)-1) {
+            logerr("Error return from fread_unlocked while reading records for table rebuild");
+            exit(1);
+        }
 
-        // End of file has been reached as read has failed.
-        if (fields_read != table->record_size) break;
+        // End of file has been reached as read didn't return a record size.
+        if (fields_read != (size_t)table->record_size) break;
 
         // If the block is empty, skip to the next one.
         if ((header->flags & record_flags::active) == 0) {
@@ -294,7 +304,12 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
                 dynamic_record* dynamic_data = (dynamic_record*)malloc(sizeof(dynamic_record) + entry->size);
 
                 // Read the dynamic data to the allocated space.
-                pread(table->dynamic_handle, dynamic_data, sizeof(dynamic_record) + entry->size, entry->record_location);
+                ssize_t pread_result = pread(table->dynamic_handle, dynamic_data, sizeof(dynamic_record) + entry->size, entry->record_location);
+                if (pread_result != (ssize_t)(sizeof(dynamic_record) + entry->size)) {
+                    /* Will be improved after disk read overhaul */
+                    logerr("Error or incorrect number of bytes returned from pread for dynamic string rebuild");
+                    exit(1);
+                }
 
                 // Update short string statistic if short.
                 if (entry->size != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
@@ -305,7 +320,12 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
                 entry->record_location = ftell(new_dynamic_handle);
 
                 // Write the dynamic data to the new file.
-                fwrite_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size, new_dynamic_handle);
+                size_t fwrite_result = fwrite_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size, new_dynamic_handle);
+                if (fwrite_result != sizeof(dynamic_record) + entry->size) {
+                    /* Will be improved after disk read overhaul */
+                    logerr("Error or incorrect number of bytes returned from fwrite_unlocked for dynamic string rebuild update");
+                    exit(1);
+                }
 
                 // Free the allocated dynamic data as it is not needed anymore.
                 free(dynamic_data);
@@ -313,7 +333,12 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
         }
 
         // Write the record to the new data file.
-        fwrite(header, 1, table->record_size, new_data_handle);
+        size_t fwrite_result = fwrite_unlocked(header, 1, table->record_size, new_data_handle);
+        if (fwrite_result != table->record_size) {
+            /* Will be improved after disk read overhaul */
+            logerr("Error or incorrect number of bytes returned from fwrite_unlocked for record insert in table rebuild");
+            exit(1);
+        }
 
         fseek(new_dynamic_handle, 0, SEEK_END);
         fseek(new_data_handle, 0, SEEK_END);

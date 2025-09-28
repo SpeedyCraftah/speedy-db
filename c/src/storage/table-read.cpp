@@ -112,7 +112,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                     char* dynamic_data = (char*)malloc(entry->size);
                     
                     // Read the dynamic data to the allocated space.
-                    pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    if (pread_result != entry->size) {
+                        /* Will be improved after disk read overhaul */
+                        logerr("Error or incorrect number of bytes returned from pread for dynamic string");
+                        exit(1);
+                    }
 
                     // Compare the data character by character to 100% confirm they are a match.
                     // Safe to use memcmp since they are guaranteed to be same size.
@@ -149,7 +154,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                     std::string_view dynamic_data_sv = std::string_view(dynamic_data, entry->size);
                     
                     // Read the dynamic data to the allocated space.
-                    pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    if (pread_result != entry->size) {
+                        /* Will be improved after disk read overhaul */
+                        logerr("Error or incorrect number of bytes returned from pread for dynamic string");
+                        exit(1);
+                    }
 
                     // Check if the string contains the item.
                     size_t match_result = dynamic_data_sv.find(cmp.comparator);
@@ -190,7 +200,12 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                     std::string_view ro_dynamic_string = std::string_view(dynamic_data, entry->size);
 
                     // Read the dynamic data to the allocated space.
-                    pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    if (pread_result != entry->size) {
+                        /* Will be improved after disk read overhaul */
+                        logerr("Error or incorrect number of bytes returned from pread for dynamic string");
+                        exit(1);
+                    }
 
                     // Check if the hash matches equal to any of the actual string values.
                     if (list_entry->second.is_single()) {
@@ -235,7 +250,12 @@ void ActiveTable::assemble_record_data_to_json(record_header* record, size_t inc
                 std::string_view buffer_sv(buffer, entry->size);
 
                 // Read the dynamic data.
-                pread(this->dynamic_handle, buffer, entry->size, entry->record_location + sizeof(dynamic_record));
+                ssize_t pread_result = pread(this->dynamic_handle, buffer, entry->size, entry->record_location + sizeof(dynamic_record));
+                if (pread_result != entry->size) {
+                    /* Will be improved after disk read overhaul */
+                    logerr("Error or incorrect number of bytes returned from pread for dynamic string");
+                    exit(1);
+                }
 
                 // Store the dynamic data and free the buffer.
                 output.AddMember(rapidjson_string_view(column_name), rapidjson_string_view(buffer_sv), output.GetAllocator());

@@ -7,8 +7,9 @@
 #include <exception>
 #include "../deps/xxh/xxhash.h"
 #include "../misc/constants.h"
+#include "../deps/simdjson/simdjson.h"
 
-using simdjson::fallback::ondemand::json_type;
+using simdjson::ondemand::json_type;
 
 #define MAX_VARIABLE_OPERATION_COUNT 20
 
