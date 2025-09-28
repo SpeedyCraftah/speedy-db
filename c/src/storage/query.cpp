@@ -139,8 +139,6 @@ inline ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_d
 
 
 void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
-    int socket_id = socket_data->socket_id;
-    bool error_text = socket_data->config.error_text;
     DatabaseAccount* account = socket_data->account;
 
     size_t op;
@@ -226,7 +224,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 std::string_view d = column_d["type"];
                 types type = type_string_to_int(d);
 
-                if (type == -1) {
+                if (type == (types)-1) {
                     send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
@@ -609,7 +607,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             columns.SetObject();
 
             // Iterate over columns.
-            for (int i = 0; i < table->header.num_columns; i++) {
+            for (uint32_t i = 0; i < table->header.num_columns; i++) {
                 table_column& column = table->header_columns[i];
                 std::string_view column_name = column.name;
                 std::string_view column_type_name = type_int_to_string(column.type);

@@ -6,7 +6,7 @@ A database written in C++ and C which has been started due to me needing a proje
 # Features
 - Most features you'd see in modern databases including inserting, deleting and updating records.
 - TCP connection which also has custom-made frames which are optimized to benefit from TCP grouping multiple packets which allows for simulataneous query sending.
-- Encryption of the TCP connection without TLS using AES256 cipher-block chaining and the diffie hellman key exchange (not secure! diffie hellman algorithm is cryptographically broken).
+- Encryption of the connection without TLS using AES256 cipher-block chaining and the diffie hellman key exchange with a known safe prime.
 - JSON querying language which is designed specifically for languages such as JavaScript and Python which have native JSON support.
 - Standard column data types including bytes, integers, floats, strings and longs.
 - Strings and other long pieces of data are hashed which allows for the same performance as if you were querying a single number.
@@ -48,9 +48,6 @@ I've added an AppArmor profile in `~/c/` which is locked down to access only the
   - ARM64 should work fine but there may be compatibility issues with RapidJSON & slight performance drops with xxHash & simdjson. 
 - Little-endian byte order CPU (big-endian may work just fine but this has been untested).
 
-# Bugs
-- Password provided by the client is sent in the handshake stage which is not encrypted.
-
 # Libraries used
 - [simdjson](https://github.com/simdjson/simdjson) for accelerated JSON parsing.
 - [RapidJSON](https://github.com/Tencent/rapidjson) for building of JSON data.
@@ -69,7 +66,9 @@ All parameters are specified without dashes (e.g. `./bin password=hello_world`).
 
 # What this is not
 An enterprise-level database which is reliable and can handle very high traffic reliably.
-For something like this you need to use a database such as MySQL/Postgres/MariaDB.
+Despite having a comprehensive fuzzing and testing process in place as well as using the database for my own mail server, nothing replaces a proper test like many different users with different requirements testing the software.
+Alongside this, it doesn't (yet) have flexible queries present like in mainstream databases.
+For something like this, you should use a database such as MySQL/Postgres/MariaDB.
 
 # JavaScript example
 ```js
@@ -81,7 +80,7 @@ const db = new Client({
 	auth: {
 		password: "mydatabaseisthebest"
 	},
-	cipher: "diffie-hellman-aes256-cbc" // This is the only cipher supported at the moment.
+	cipher: "diffie-hellman-aes256-cbc"
 });
 
 await db.connect();
@@ -125,6 +124,7 @@ const users = await db.table("users").findMany({
 ```
 
 # Notes
+Something worth keeping in mind is that when I started this project, this was straight after writing my own operating system kernel which was my first ever exposure to assembly/c/c++/low level code, and so I have learnt a lot of practices that are essential in operating system development but not necessarily helpful when writing modern userspace low-level software, and pairing this with a fundamental misunderstanding of the language and typical practices, you end up with some weird unsafe code, but I am trying my best to rewrite/modern-ise it as I go. 
 This was originally meant to be written in C; however I have opted into using C++ as it allows for better looking and maintainable code as well as built-in structures and methods which would be a hassle to implement in C.
 I have also opted into using C APIs for most things such as TCP and disk access as they are less complicated and result in more than 2x better performance than equivalent C++ APIs.
 I also had to write this entire README twice as I accidentally clicked off when writing it on GitHub.

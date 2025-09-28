@@ -153,7 +153,7 @@ class ActiveTable {
                         // Read the data into the string.
                         pread(table->dynamic_handle, &str_buffer[0], entry->size, entry->record_location + sizeof(dynamic_record));
 
-                        return std::move(str_buffer);
+                        return str_buffer;
                     }
             };
 
@@ -163,7 +163,7 @@ class ActiveTable {
                 data_iterator iterator;
                 record_header* current_record;
 
-                inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : table(tbl), query(q), iterator(table->begin()), current_record(*iterator) {}
+                inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : query(q), table(tbl), iterator(table->begin()), current_record(*iterator) {}
 
                 specific_data_iterator operator++() {
                     while (!this->iterator.complete) {

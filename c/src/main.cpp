@@ -32,7 +32,7 @@ std::unordered_map<std::string, DatabaseAccount*, MapStringViewHash, MapStringVi
 FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
-int server_config::version::major = 8;
+int server_config::version::major = 9;
 int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
