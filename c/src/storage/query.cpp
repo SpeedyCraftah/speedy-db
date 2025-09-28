@@ -56,32 +56,32 @@ void send_query_response(client_socket_data* socket_data, int nonce) {
 }
 
 void send_query_error(client_socket_data* socket_data, int nonce, query_error error) {
-    rapidjson::Document data_object;
-    data_object.SetObject();
-    data_object.AddMember(rj_query_keys::error_code, error, data_object.GetAllocator());
-    if (socket_data->config.error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[error], data_object.GetAllocator());
-
     rapidjson::Document response_object;
     response_object.SetObject();
     response_object.AddMember(rj_query_keys::nonce, nonce, response_object.GetAllocator());
-    response_object.AddMember(rj_query_keys::data, data_object, response_object.GetAllocator());
     response_object.AddMember(rj_query_keys::error, 1, response_object.GetAllocator());
+    
+    rapidjson::Document data_object;
+    data_object.SetObject();
+    data_object.AddMember(rj_query_keys::error_code, error, response_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[error], response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::data, data_object, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
 
 // TODO - query and query compiler errors are the same, remove error code in response with next update.
 void send_query_error(client_socket_data* socket_data, int nonce, query_compiler::error error) {
-    rapidjson::Document data_object;
-    data_object.SetObject();
-    data_object.AddMember(rj_query_keys::error_code, error, data_object.GetAllocator());
-    if (socket_data->config.error_text) data_object.AddMember(rj_query_keys::error_text, query_compiler::error_text[error], data_object.GetAllocator());
-
     rapidjson::Document response_object;
     response_object.SetObject();
     response_object.AddMember(rj_query_keys::nonce, nonce, response_object.GetAllocator());
-    response_object.AddMember(rj_query_keys::data, data_object, response_object.GetAllocator());
     response_object.AddMember(rj_query_keys::error, 1, response_object.GetAllocator());
+    
+    rapidjson::Document data_object;
+    data_object.SetObject();
+    data_object.AddMember(rj_query_keys::error_code, error, response_object.GetAllocator());
+    if (socket_data->config.error_text) data_object.AddMember(rj_query_keys::error_text, query_compiler::error_text[error], response_object.GetAllocator());
+    response_object.AddMember(rj_query_keys::data, data_object, response_object.GetAllocator());
 
     send_json(socket_data, response_object);
 }
@@ -366,8 +366,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         }
 
         case query_ops::fetch_account_privileges: {
-            std::string_view username_sv = d["username"];
-            std::string username = {username_sv.begin(), username_sv.end()};
+            std::string_view username = d["username"];
 
             accounts_mutex.lock();
 
@@ -382,7 +381,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             DatabaseAccount* t_account = account_lookup->second;
 
             // Convert the permission data into an object that can be sent.
-            // TODO - construct initial object once.
             rapidjson::Document permissions;
             permissions.SetObject();
             permissions.AddMember("CREATE_ACCOUNTS", (bool)t_account->permissions.CREATE_ACCOUNTS, permissions.GetAllocator());
@@ -614,12 +612,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 rapidjson::Document column_object;
                 column_object.SetObject();
-                column_object.AddMember("name", rapidjson_string_view(column_name), columns.GetAllocator());
-                column_object.AddMember("size", column.size, columns.GetAllocator());
-                column_object.AddMember("type", rapidjson_string_view(column_type_name), columns.GetAllocator());
-                column_object.AddMember("physical_index", column.index, columns.GetAllocator());
+                column_object.AddMember("name", rapidjson_string_view(column_name), json.GetAllocator());
+                column_object.AddMember("size", column.size, json.GetAllocator());
+                column_object.AddMember("type", rapidjson_string_view(column_type_name), json.GetAllocator());
+                column_object.AddMember("physical_index", column.index, json.GetAllocator());
 
-                columns.AddMember(rapidjson_string_view(column_name), column_object, columns.GetAllocator());
+                columns.AddMember(rapidjson_string_view(column_name), column_object, json.GetAllocator());
             }
 
             json.AddMember("columns", columns, json.GetAllocator());
