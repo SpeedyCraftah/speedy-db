@@ -77,6 +77,7 @@ const db = new Client({
 		port: 4546
 	},
 	auth: {
+    username: "somethingcreative",
 		password: "mydatabaseisthebest"
 	},
 	cipher: "diffie-hellman-aes256-cbc"
