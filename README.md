@@ -56,7 +56,7 @@ I've added an AppArmor profile in `~/c/` which is locked down to access only the
 - Everything else was written by me.
 
 # Command-line parameters
-All parameters are specified without dashes (e.g. `./bin password=hello_world`).
+All parameters are specified without dashes (e.g. `./bin port=4547`).
 - `force-encrypted-traffic` - allows you to force connecting clients to connect with encryption enabled.
 - `port=[your_port]` - allows you to set the listening port for the database.
 - `max-connections=[maximum_connections]` - allows you to set the maximum amount of concurrent connections.
