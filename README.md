@@ -57,12 +57,11 @@ I've added an AppArmor profile in `~/c/` which is locked down to access only the
 
 # Command-line parameters
 All parameters are specified without dashes (e.g. `./bin password=hello_world`).
-- `password=[your_password]` - specifies the password clients must send in order to connect.
-- `no-password`- allows you to start an instance without a password (this will allow anyone to connect).
 - `force-encrypted-traffic` - allows you to force connecting clients to connect with encryption enabled.
 - `port=[your_port]` - allows you to set the listening port for the database.
 - `max-connections=[maximum_connections]` - allows you to set the maximum amount of concurrent connections.
 - `data-directory=[path]` - allows you to set a custom data directory location (default `./data`).
+- `enable-root-account` - enables the disabled root account with a temporary password which can be used to create initial user accounts.
 
 # What this is not
 An enterprise-level database which is reliable and can handle very high traffic reliably.
