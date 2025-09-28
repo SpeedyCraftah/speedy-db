@@ -97,9 +97,6 @@ await db.table("users").create({
     favourite_number: { type: "long" }
 }).catch(() => null);
 
-// Open table - catch to prevent error if table is already open.
-await db.table("users").open().catch(() => null);
-
 const users = await db.table("users").findMany({
     // Query conditions - leave empty for all.
     where: {
