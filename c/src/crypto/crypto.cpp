@@ -128,15 +128,8 @@ std::unique_ptr<uint8_t> crypto::dh::compute_secret(EVP_PKEY* local_key, const s
         throw std::runtime_error("EVP_PKEY_derive (size) failed");
     }
 
-    if (secret_length < MAX_DH_KEY_DERIVE_SIZE) {
-        EVP_PKEY_free(foreign_key);
-        EVP_PKEY_CTX_free(dctx);
-        ERR_print_errors_fp(stderr);
-        throw std::runtime_error("Generated DH key is less than the amount required by MAX_DH_KEY_DERIVE_SIZE");
-    }
-
     // Prepare the secret output.
-    uint8_t* secret = new uint8_t[secret_length];
+    uint8_t* secret = new uint8_t[MAX_DH_KEY_SIZE];
     EVP_PKEY_derive(dctx, secret, &secret_length);
 
     EVP_PKEY_CTX_free(dctx);
@@ -248,4 +241,14 @@ bool crypto::password::equal(std::string_view plaintext_password, AccountPasswor
 
     // Return true if result == 0 (equal).
     return result == 0;
+}
+
+void crypto::hash::sha256(const char* input, size_t input_size, char* output) {
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    uint32_t length = 0;
+
+    EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+    EVP_DigestUpdate(ctx, input, input_size);
+    EVP_DigestFinal_ex(ctx, (unsigned char*)output, &length);
+    EVP_MD_CTX_free(ctx);
 }

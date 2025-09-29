@@ -15,6 +15,9 @@ A database written in C++ and C which has been started due to me needing a proje
 - Password protection enforced on connecting clients which also has a back-off period to prevent brute-force attacks.
 - Handles high traffic very well.
 
+# Goals / Philosophy
+- **Flexibility and choice:** Most of the databases you see lean in a specific direction, they're either overly restrictive with what queries or features they allow for performance reasons (e.g. MySQL, MariaDB), or they are extremely relaxed/flexible in terms of schema and queries where performance is an afterthought (e.g. MongoDB). SpeedyDB wants to provide developers with both. You should be able to pick between strict schemas and strongly typed queries for maximum performance, as well as being able to use the database in more "relaxed/flexible" ways (e.g. querying or modifying data with custom JavaScript sent to the DB). Databases are used in increasingly variable ways, and I think the solution should be that the database should support multiple styles of usage instead of the solution being to "use another database for that". Data tends to be highly volatile, and I don't think the approach of "do one thing well" fits databases particularly.
+
 # Security / Containerization
 Since I feel quite guilty about some of the code design decisions I made here, I've created 2 options for locking the database down and limiting the impact of a zero-day attack on the database.
 
@@ -44,7 +47,7 @@ I've added an AppArmor profile in `~/c/` which is locked down to access only the
 - Query planner query which can be used to debug the execution plan of a query.
 
 # Supported platforms
-- Linux X86 (no windows yet sorry).
+- Linux X86 (no windows yet, but Node.JS client driver supports practically every environment that Node.JS supports).
   - ARM64 should work fine but there may be compatibility issues with RapidJSON & slight performance drops with xxHash & simdjson. 
 - Little-endian byte order CPU (big-endian may work just fine but this has been untested).
 
@@ -56,13 +59,12 @@ I've added an AppArmor profile in `~/c/` which is locked down to access only the
 - Everything else was written by me.
 
 # Command-line parameters
-All parameters are specified without dashes (e.g. `./bin password=hello_world`).
-- `password=[your_password]` - specifies the password clients must send in order to connect.
-- `no-password`- allows you to start an instance without a password (this will allow anyone to connect).
+All parameters are specified without dashes (e.g. `./bin port=4547`).
 - `force-encrypted-traffic` - allows you to force connecting clients to connect with encryption enabled.
 - `port=[your_port]` - allows you to set the listening port for the database.
 - `max-connections=[maximum_connections]` - allows you to set the maximum amount of concurrent connections.
 - `data-directory=[path]` - allows you to set a custom data directory location (default `./data`).
+- `enable-root-account` - enables the disabled root account with a temporary password which can be used to create initial user accounts.
 
 # What this is not
 An enterprise-level database which is reliable and can handle very high traffic reliably.
@@ -78,6 +80,7 @@ const db = new Client({
 		port: 4546
 	},
 	auth: {
+    username: "somethingcreative",
 		password: "mydatabaseisthebest"
 	},
 	cipher: "diffie-hellman-aes256-cbc"
@@ -96,9 +99,6 @@ await db.table("users").create({
     balance: { type: "float" }, /* FYI floats are safe to use for currency... provided they stay within the float precision range and no arithmetic is done! */
     favourite_number: { type: "long" }
 }).catch(() => null);
-
-// Open table - catch to prevent error if table is already open.
-await db.table("users").open().catch(() => null);
 
 const users = await db.table("users").findMany({
     // Query conditions - leave empty for all.
