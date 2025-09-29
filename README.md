@@ -15,6 +15,9 @@ A database written in C++ and C which has been started due to me needing a proje
 - Password protection enforced on connecting clients which also has a back-off period to prevent brute-force attacks.
 - Handles high traffic very well.
 
+# Goals / Philosophy
+- **Flexibility and choice:** Most of the databases you see lean in a specific direction, they're either overly restrictive with what queries or features they allow for performance reasons (e.g. MySQL, MariaDB), or they are extremely relaxed/flexible in terms of schema and queries where performance is an afterthought (e.g. MongoDB). SpeedyDB wants to provide developers with both. You should be able to pick between strict schemas and strongly typed queries for maximum performance, as well as be able to use the database in more "relaxed" ways (e.g. querying or modifying data with custom JavaScript sent to the DB). Databases are used in increasingly variable ways, and I think the solution should be that the database should support multiple styles of usage instead of the solution being to "use another database for that".
+
 # Security / Containerization
 Since I feel quite guilty about some of the code design decisions I made here, I've created 2 options for locking the database down and limiting the impact of a zero-day attack on the database.
 
