@@ -347,7 +347,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
                     this.socket.write(JSON.stringify(handshakeData2));
 
                     const secret = dh.computeSecret(Buffer.from(handshakeConfirmation.cipher.public_key, "base64"), null);
-                    this.secret = secret.subarray(0, 32);
+                    this.secret = crypto.createHash("sha256").update(secret).digest();
 
                     let encryptionConfirmation = await new Promise((resolve) => {
                         this.socket.once("data", d => {

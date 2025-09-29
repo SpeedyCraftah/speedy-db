@@ -7,7 +7,7 @@
 #include <string>
 #include "../permissions/accounts.h"
 
-#define MAX_DH_KEY_DERIVE_SIZE 32
+#define MAX_DH_KEY_SIZE 256
 #define AES_IV_SIZE 16
 
 namespace crypto {
@@ -28,6 +28,10 @@ namespace crypto {
             return AES_IV_SIZE + length + padding;
         }
     };
+
+    namespace hash {
+        void sha256(const char* input, size_t input_size, char* output);
+    }
 
     namespace password {
         void hash(std::string_view plaintext_password, AccountPassword* out);

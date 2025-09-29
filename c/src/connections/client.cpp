@@ -359,8 +359,8 @@ void* client_connection_handle(void* arg) {
             // Compute the secret.
             std::unique_ptr<uint8_t> raw_secret = crypto::dh::compute_secret(dh, public_key);
 
-            // Copy only 32 bytes since that's what AES256 supports.
-            memcpy(socket_data->encryption.aes_secret, raw_secret.get(), MAX_DH_KEY_DERIVE_SIZE);
+            // Hash the secret with SHA256 to truncate the DH output for use with AES256.
+            crypto::hash::sha256((const char*)raw_secret.get(), MAX_DH_KEY_SIZE, socket_data->encryption.aes_secret);
 
             // Create new cipher.
             socket_data->encryption.aes_ctx = EVP_CIPHER_CTX_new();

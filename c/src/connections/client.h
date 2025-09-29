@@ -1,6 +1,7 @@
 #pragma once
 
 #include <netinet/in.h>
+#include <openssl/sha.h>
 #include <pthread.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
@@ -40,7 +41,7 @@ struct client_socket_data {
 
     struct encryption_t {
         bool enabled = false;
-        char aes_secret[32];
+        char aes_secret[SHA256_DIGEST_LENGTH];
         EVP_CIPHER_CTX* aes_ctx;
     };
 
