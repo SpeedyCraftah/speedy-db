@@ -12,8 +12,9 @@ enum ColumnType : uint32_t {
     String
 };
 
-std::string_view column_type_to_string(ColumnType type);
-ColumnType string_to_column_type(std::string_view type);
+constexpr std::string_view column_type_to_string(ColumnType type);
+constexpr ColumnType string_to_column_type(std::string_view type);
+constexpr size_t column_type_alignof(ColumnType type);
 
 union NumericColumnData {
     size_t unsigned64_raw = 0;
