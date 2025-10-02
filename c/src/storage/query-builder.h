@@ -13,23 +13,23 @@ namespace query_builder {
     //#define updates_count 3
 
     // Prototypes.
-    class general_query {
+    class GeneralQuery {
         protected:
             ActiveTable* table;
 
             // Resolve index of column from name.
             inline uint32_t resolve_column_index(std::string_view column_name) {
-                table_column* column = table->columns.find(column_name)->second;
+                TableColumn* column = table->columns.find(column_name)->second;
                 return column->index;
             }
     };
 
     template<size_t where_count>
-    class general_where_query : public general_query {
+    class GeneralWhereQuery : public GeneralQuery {
         public:
             static QueryComparator string_equal_to(std::string_view comparator) {
                 QueryComparator cmp;
-                cmp.op = where_compare_op::STRING_EQUAL;
+                cmp.op = WhereComparoOp::STRING_EQUAL;
                 cmp.negated = false;
                 cmp.info.set_as<QueryComparator::String>();
                 cmp.info.as<QueryComparator::String>().comparator = comparator;
@@ -47,7 +47,7 @@ namespace query_builder {
 
             static QueryComparator numeric_equal_to(NumericColumnData comparator) {
                 QueryComparator cmp;
-                cmp.op = where_compare_op::NUMERIC_EQUAL;
+                cmp.op = WhereComparoOp::NUMERIC_EQUAL;
                 cmp.negated = false;
                 cmp.info.set_as<QueryComparator::Numeric>();
                 cmp.info.as<QueryComparator::Numeric>().comparator = comparator;
@@ -83,9 +83,9 @@ namespace query_builder {
     // Queries.
 
     template<size_t where_count>
-    class find_query : public general_where_query<where_count> {
+    class FindQuery : public GeneralWhereQuery<where_count> {
         public:
-            find_query(ActiveTable* t) { this->table = t; }
+            FindQuery(ActiveTable* t) { this->table = t; }
 
             inline void set_offset(size_t offset) {
                 this->offset = offset;
@@ -107,13 +107,13 @@ namespace query_builder {
     };
 
     template<size_t where_count, size_t updates_count>
-    class update_query : public general_where_query<where_count> {
+    class UpdateQuery : public GeneralWhereQuery<where_count> {
         public:
-            update_query(ActiveTable* t) { this->table = t; }
+            UpdateQuery(ActiveTable* t) { this->table = t; }
 
             static UpdateSet update_string(std::string_view new_value) {
                 UpdateSet update;
-                update.op = update_changes_op::STRING_SET;
+                update.op = UpdateChangesOp::STRING_SET;
                 update.info.set_as<UpdateSet::String>();
                 update.info.as<UpdateSet::String>().new_value = new_value;
                 update.info.as<UpdateSet::String>().new_value_hash = XXH64(new_value.data(), new_value.size(), HASH_SEED);
@@ -123,7 +123,7 @@ namespace query_builder {
 
             static UpdateSet update_numeric(NumericColumnData value) {
                 UpdateSet update;
-                update.op = update_changes_op::NUMERIC_SET;
+                update.op = UpdateChangesOp::NUMERIC_SET;
                 update.info.set_as<UpdateSet::Numeric>();
                 update.info.as<UpdateSet::Numeric>().new_value = value;
                 
@@ -155,9 +155,9 @@ namespace query_builder {
     };
 
     template<size_t columns_count>
-    class insert_query : public general_query {
+    class InsertQuery : public GeneralQuery {
         public:
-            insert_query(ActiveTable* t) { this->table = t; }
+            InsertQuery(ActiveTable* t) { this->table = t; }
 
             void set_value(std::string_view column_name, std::string_view value) {
                 InsertColumn& column = values[this->resolve_column_index(column_name)];
@@ -186,9 +186,9 @@ namespace query_builder {
     };
 
     template<size_t where_count>
-    class erase_query : public general_where_query<where_count> {
+    class EraseQuery : public GeneralWhereQuery<where_count> {
         public:
-            erase_query(ActiveTable* t) { this->table = t; }
+            EraseQuery(ActiveTable* t) { this->table = t; }
 
             CompiledEraseQuery* build() {
                 query.is_static_alloc = true; // Important! Arrays here are released automatically once the class is dropped.

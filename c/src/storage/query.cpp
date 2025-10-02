@@ -38,7 +38,7 @@ void send_query_response(client_socket_data* socket_data, int nonce) {
     send_json(socket_data, response_object);
 }
 
-void send_query_error(client_socket_data* socket_data, int nonce, query_error error) {
+void send_query_error(client_socket_data* socket_data, int nonce, QueryError error) {
     rapidjson::Document response_object;
     response_object.SetObject();
     response_object.AddMember(rj_query_keys::nonce, nonce, response_object.GetAllocator());
@@ -79,13 +79,13 @@ ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_data* so
     } else {
         // If name is invalid.
         if (!misc::name_string_legal(name)) {
-            send_query_error(socket_data, nonce, query_error::params_invalid);
+            send_query_error(socket_data, nonce, QueryError::params_invalid);
             return nullptr;
         }
 
         // If name starts with a reserved sequence.
         if (name.starts_with("--internal")) {
-            send_query_error(socket_data, nonce, query_error::name_reserved);
+            send_query_error(socket_data, nonce, QueryError::name_reserved);
             return nullptr;
         }
 
@@ -93,7 +93,7 @@ ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_data* so
 
         // Check if table exists.
         if (!table_exists(name)) {
-            send_query_error(socket_data, nonce, query_error::table_not_found);
+            send_query_error(socket_data, nonce, QueryError::table_not_found);
             return nullptr;
         }
 
@@ -111,7 +111,7 @@ ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_data* so
 inline ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_data* socket_data, uint nonce, simdjson::ondemand::object& d) {
     std::string_view name;
     if (d["table"].get(name) != simdjson::error_code::SUCCESS) {
-        send_query_error(socket_data, nonce, query_error::params_invalid);
+        send_query_error(socket_data, nonce, QueryError::params_invalid);
         return nullptr;
     }
 
@@ -124,45 +124,45 @@ inline ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_d
 void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
     DatabaseAccount* account = socket_data->account;
 
-    size_t op;
+    QueryOp op;
     simdjson::ondemand::object d;
 
-    if (data[sj_query_keys::op].get(op) != simdjson::error_code::SUCCESS) {
-        send_query_error(socket_data, nonce, query_error::op_invalid);
+    if (data[sj_query_keys::op].get((size_t&)op) != simdjson::error_code::SUCCESS) {
+        send_query_error(socket_data, nonce, QueryError::op_invalid);
         return;
     } else if (data[sj_query_keys::data].get(d) != simdjson::error_code::SUCCESS) {
-        send_query_error(socket_data, nonce, query_error::data_invalid);
+        send_query_error(socket_data, nonce, QueryError::data_invalid);
         return;
     }
 
-    if (op >= query_ops::no_query_found_placeholder) {
-        send_query_error(socket_data, nonce, query_error::op_invalid);
+    if (op >= QueryOp::NoQueryFoundPlaceholder) {
+        send_query_error(socket_data, nonce, QueryError::op_invalid);
         return;
     }
 
     switch (op) {
-        case query_ops::no_operation: {
+        case QueryOp::NoOperation: {
             send_query_response(socket_data, nonce);
             return;
         }
 
-        case query_ops::open_table: {
+        case QueryOp::OpenTable: {
             if (ensure_table_open(d) != nullptr) send_query_response(socket_data, nonce);
             return;
         }
 
-        case query_ops::create_table: {
-            if (!account->permissions.CREATE_TABLES) return query_error(query_error::insufficient_privileges);
+        case QueryOp::CreateTable: {
+            if (!account->permissions.CREATE_TABLES) return query_error(QueryError::insufficient_privileges);
 
             std::string_view name;
             simdjson::ondemand::object columns_object;
             if (
                 d["name"].get(name) != simdjson::error_code::SUCCESS || 
                 d["columns"].get(columns_object) != simdjson::error_code::SUCCESS
-            ) return query_error(query_error::params_invalid);
+            ) return query_error(QueryError::params_invalid);
 
             if (columns_object.is_empty()) {
-                send_query_error(socket_data, nonce, query_error::params_invalid);
+                send_query_error(socket_data, nonce, QueryError::params_invalid);
                 return;
             }
 
@@ -170,34 +170,34 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             size_t columns_object_count = columns_object.count_fields();
 
             if (columns_object_count > DB_MAX_PHYSICAL_COLUMNS) {
-                send_query_error(socket_data, nonce, query_error::too_many_columns);
+                send_query_error(socket_data, nonce, QueryError::too_many_columns);
                 return;
             }
 
             // If name starts with a reserved sequence.
             if (name.starts_with("--internal")) {
-                send_query_error(socket_data, nonce, query_error::name_reserved);
+                send_query_error(socket_data, nonce, QueryError::name_reserved);
                 return;
             }
 
             if (!misc::name_string_legal(name)) {
-                send_query_error(socket_data, nonce, query_error::params_invalid);
+                send_query_error(socket_data, nonce, QueryError::params_invalid);
                 return;
             }
 
             if (table_exists(name)) {
-                send_query_error(socket_data, nonce, query_error::table_name_in_use);
+                send_query_error(socket_data, nonce, QueryError::table_name_in_use);
                 return;
             }
 
             // Allocate space for the columns.
             size_t iteration = 0;
 
-            std::unique_ptr<table_column[]> columns(new table_column[columns_object_count]);
+            std::unique_ptr<TableColumn[]> columns(new TableColumn[columns_object_count]);
             for (auto item : columns_object) {
                 std::string_view column_name = item.unescaped_key();
                 if (!misc::column_name_string_legal(column_name)) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
+                    send_query_error(socket_data, nonce, QueryError::params_invalid);
                     return;
                 }
 
@@ -208,12 +208,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 ColumnType type = string_to_column_type(d);
 
                 if (type == (ColumnType)-1) {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
+                    send_query_error(socket_data, nonce, QueryError::params_invalid);
                     return;
                 }
 
                 // Setup struct.
-                table_column new_column;
+                TableColumn new_column;
                 new_column.type = type;
 
                 // Compute size.
@@ -238,14 +238,14 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::create_database_account: {
+        case QueryOp::CreateDatabaseAccount: {
             // TODO - dangerous permission since users can create accounts with permissions they dont have effectively 
-            if (!account->permissions.CREATE_ACCOUNTS) return query_error(query_error::insufficient_privileges);
+            if (!account->permissions.CREATE_ACCOUNTS) return query_error(QueryError::insufficient_privileges);
 
             size_t hierarchy_index = d["hierarchy_index"];
 
             // If hierarchy index requested is more important or equal to current users index.
-            if (hierarchy_index <= account->permissions.HIERARCHY_INDEX) return query_error(query_error::insufficient_privileges);
+            if (hierarchy_index <= account->permissions.HIERARCHY_INDEX) return query_error(QueryError::insufficient_privileges);
 
             // Check if user is granting privileges which the current user does not have.
             // TODO - implement this, need to upgrade C++ to C++17+ for constexpr
@@ -256,19 +256,19 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If username or passwords are too short or are too long.
             if (!misc::name_string_legal(username) || password_sv.length() > 100 || password_sv.length() < 2) {
-                send_query_error(socket_data, nonce, query_error::params_invalid);
+                send_query_error(socket_data, nonce, QueryError::params_invalid);
                 return;
             }
 
             // If username is reserved by being called root.
             if (username == "root") {
-                send_query_error(socket_data, nonce, query_error::name_reserved);
+                send_query_error(socket_data, nonce, QueryError::name_reserved);
                 return;
             }
 
             // If hierarchy index is 0, or is above 1,000,000 which is reserved.
             if (hierarchy_index == 0 || hierarchy_index > 1000000) {
-                send_query_error(socket_data, nonce, query_error::value_reserved);
+                send_query_error(socket_data, nonce, QueryError::value_reserved);
                 return;
             }
 
@@ -293,7 +293,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (key == "UPDATE_ACCOUNTS") permissions.UPDATE_ACCOUNTS = value;
                 else if (key == "DELETE_ACCOUNTS") permissions.DELETE_ACCOUNTS = value;
                 else if (key == "TABLE_ADMINISTRATOR") permissions.TABLE_ADMINISTRATOR = value;
-                else throw query_error::params_invalid;                
+                else throw QueryError::params_invalid;                
             }
 
             accounts_mutex.lock();
@@ -301,7 +301,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // If username is already taken.
             if (database_accounts.count(username) != 0) {
                 accounts_mutex.unlock();
-                send_query_error(socket_data, nonce, query_error::account_username_in_use);
+                send_query_error(socket_data, nonce, QueryError::account_username_in_use);
                 return;
             }
 
@@ -315,8 +315,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::delete_database_account: {
-            if (!account->permissions.DELETE_ACCOUNTS) return query_error(query_error::insufficient_privileges);
+        case QueryOp::DeleteDatabaseAccount: {
+            if (!account->permissions.DELETE_ACCOUNTS) return query_error(QueryError::insufficient_privileges);
 
             std::string_view username_sv = d["username"];
             std::string username = {username_sv.begin(), username_sv.end()};
@@ -327,7 +327,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             auto account_lookup = database_accounts.find(username);
             if (account_lookup == database_accounts.end()) {
                 accounts_mutex.unlock();
-                send_query_error(socket_data, nonce, query_error::username_not_found);
+                send_query_error(socket_data, nonce, QueryError::username_not_found);
                 return;
             }
 
@@ -336,7 +336,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // If target account has a higher or same hierarchy index.
             if (t_account->permissions.HIERARCHY_INDEX <= account->permissions.HIERARCHY_INDEX) {
                 accounts_mutex.unlock();
-                return query_error(query_error::insufficient_privileges);
+                return query_error(QueryError::insufficient_privileges);
             }
 
             delete_database_account_unlocked(t_account);
@@ -348,7 +348,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::fetch_account_privileges: {
+        case QueryOp::FetchAccountPrivileges: {
             std::string_view username = d["username"];
 
             accounts_mutex.lock();
@@ -357,7 +357,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             auto account_lookup = database_accounts.find(username);
             if (account_lookup == database_accounts.end()) {
                 accounts_mutex.unlock();
-                send_query_error(socket_data, nonce, query_error::username_not_found);
+                send_query_error(socket_data, nonce, QueryError::username_not_found);
                 return;
             }
 
@@ -381,15 +381,15 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::set_table_account_privileges: {
-            if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(query_error::insufficient_privileges);
+        case QueryOp::SetTableAccountPrivileges: {
+            if (!account->permissions.TABLE_ADMINISTRATOR) return query_error(QueryError::insufficient_privileges);
 
             std::string_view username = d["username"];
             std::string_view table_name = d["table"];
 
             // If username is reserved by being called root.
             if (username == "root") {
-                send_query_error(socket_data, nonce, query_error::name_reserved);
+                send_query_error(socket_data, nonce, QueryError::name_reserved);
                 return;
             }
 
@@ -398,7 +398,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Find the account.
             auto account_lookup = database_accounts.find(username);
             if (account_lookup == database_accounts.end()) {
-                send_query_error(socket_data, nonce, query_error::username_not_found);
+                send_query_error(socket_data, nonce, QueryError::username_not_found);
                 return;
             }
             
@@ -409,7 +409,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If table is internal.
             if (table->is_internal) {
-                send_query_error(socket_data, nonce, query_error::name_reserved);
+                send_query_error(socket_data, nonce, QueryError::name_reserved);
                 return;
             }
 
@@ -428,7 +428,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (key == "UPDATE") permissions.UPDATE = value;
                 else if (key == "ERASE") permissions.ERASE = value;
                 else {
-                    send_query_error(socket_data, nonce, query_error::params_invalid);
+                    send_query_error(socket_data, nonce, QueryError::params_invalid);
                     return;
                 }
             }
@@ -441,13 +441,13 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::fetch_account_table_permissions: {
+        case QueryOp::FetchAccountTablePermissions: {
             std::string_view username = d["username"];
             std::string_view table_name = d["table"];
 
             // If table name starts with a reserved sequence.
             if (table_name.starts_with("--internal")) {
-                send_query_error(socket_data, nonce, query_error::name_reserved);
+                send_query_error(socket_data, nonce, QueryError::name_reserved);
                 return;
             }
 
@@ -456,7 +456,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Find the account.
             auto account_lookup = database_accounts.find(username);
             if (account_lookup == database_accounts.end()) {
-                send_query_error(socket_data, nonce, query_error::username_not_found);
+                send_query_error(socket_data, nonce, QueryError::username_not_found);
                 return;
             }
 
@@ -467,7 +467,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If user cannot view the table.
             if (!get_table_permissions_for_account_unlocked(table, account)->VIEW) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
                 return;
             }
 
@@ -488,7 +488,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::fetch_database_tables: {
+        case QueryOp::FetchDatabaseTables: {
             // Create an array to hold the table names.
             rapidjson::Document tables;
             tables.SetArray();
@@ -500,7 +500,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // If directory could not be opened.
             if (dir == NULL) {
-                send_query_error(socket_data, nonce, query_error::internal);
+                send_query_error(socket_data, nonce, QueryError::internal);
                 return;
             }
 
@@ -528,7 +528,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::fetch_database_accounts: {
+        case QueryOp::FetchDatabaseAccounts: {
             // Create an array to hold the account names.
             rapidjson::Document accounts;
             accounts.SetArray();
@@ -558,12 +558,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
     // Only exception to this is if the build is in debug mode since it is helpful to be able to query internal tables.
     #ifdef __OPTIMIZE__
         if (table->is_internal) {
-            send_query_error(socket_data, nonce, query_error::name_reserved);
+            send_query_error(socket_data, nonce, QueryError::name_reserved);
             return;
         }
     #else
         if (table->is_internal && account->permissions.HIERARCHY_INDEX != 0) {
-            send_query_error(socket_data, nonce, query_error::name_reserved);
+            send_query_error(socket_data, nonce, QueryError::name_reserved);
             return;
         }
     #endif
@@ -573,12 +573,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
     // If account does not have the permission to view the table.
     if (!table_permissions->VIEW) {
-        send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+        send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
         return;
     }
 
     switch (op) {
-        case query_ops::fetch_table_meta: {
+        case QueryOp::FetchTableMeta: {
             rapidjson::Document json;
             json.SetObject();
             json.AddMember("name", rapidjson_string_view(table->name), json.GetAllocator());
@@ -589,7 +589,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
             // Iterate over columns.
             for (uint32_t i = 0; i < table->header.num_columns; i++) {
-                table_column& column = table->header_columns[i];
+                TableColumn& column = table->header_columns[i];
                 std::string_view column_name = column.name;
                 std::string_view column_type_name = column_type_to_string(column.type);
 
@@ -609,7 +609,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::close_table: {
+        case QueryOp::CloseTable: {
             table_open_mutex.lock();
             
             std::string owned_name(table->name);
@@ -626,9 +626,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::insert_record: {
+        case QueryOp::InsertRecord: {
             if (!table_permissions->WRITE) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
                 return;
             }
 
@@ -643,9 +643,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::find_one_record: {
+        case QueryOp::FindOneRecord: {
             if (!table_permissions->READ) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
                 return;
             }
 
@@ -661,9 +661,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::find_all_records: {
+        case QueryOp::FindAllRecords: {
             if (!table_permissions->READ) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
                 return;
             }
 
@@ -678,9 +678,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::erase_all_records: {
+        case QueryOp::EraseAllRecords: {
             if (!table_permissions->ERASE) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
                 return;
             }
 
@@ -696,9 +696,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::update_all_records: {
+        case QueryOp::UpdateAllRecords: {
             if (!table_permissions->UPDATE) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
                 return;
             }
 
@@ -714,16 +714,16 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             return;
         }
 
-        case query_ops::rebuild_table: {
+        case QueryOp::RebuildTable: {
             if (!table_permissions->WRITE) {
-                send_query_error(socket_data, nonce, query_error::insufficient_privileges);
+                send_query_error(socket_data, nonce, QueryError::insufficient_privileges);
                 return;
             }
 
             log("Rebuild of table %s has been started", table->header.name);
 
             auto start_time = std::chrono::high_resolution_clock::now();
-            table_rebuild_statistics stats = rebuild_table(&table);
+            TableRebuildStatistics stats = rebuild_table(&table);
             auto end_time = std::chrono::high_resolution_clock::now();
 
             log("Rebuild of table %s has been completed (took %ums)", table->name, (unsigned int)((end_time - start_time) / std::chrono::milliseconds(1)));
@@ -739,5 +739,8 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             send_query_response(socket_data, nonce, data);
             return;
         }
+
+        // This case is impossible if the above switch case was defined properly.
+        default: {}
     }
 }

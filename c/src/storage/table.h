@@ -22,7 +22,7 @@
 
 // Table structs.
 
-struct table_column {
+struct TableColumn {
     char name[33] = {0};
     uint8_t name_length;
     ColumnType type;
@@ -31,36 +31,36 @@ struct table_column {
     uint32_t buffer_offset;
 };
 
-struct table_header {
+struct TableHeader {
     uint32_t magic_number;
     char name[33] = {0};
     uint32_t num_columns;
 };
 
-struct table_rebuild_statistics {
+struct TableRebuildStatistics {
     uint32_t record_count = 0;
     uint32_t dead_record_count = 0;
     uint32_t short_dynamic_count = 0;
 };
 
-enum record_flags : uint8_t {
+enum TableRecordFlags : uint8_t {
     dirty = 1, // Determines if this block has been written to at some point.
     active = 2, // Determines whether this block holds an active record.
     available_optimisation = 4, // Determines whether this block can be optimised for better storage use.
 };
 
-struct record_header {
+struct TableRecordHeader {
     uint8_t flags;
     uint8_t data[];
 } __attribute__((packed));
 
-struct dynamic_record {
+struct DynamicRecord {
     size_t record_location;
     uint32_t physical_size;
     char data[];
 } __attribute__((packed));
 
-struct hashed_entry {
+struct TableHashedEntry {
     size_t hash;
     uint32_t size;
     size_t record_location;
@@ -80,7 +80,7 @@ class ActiveTable {
         size_t erase_many_records(query_compiler::CompiledEraseQuery* query);
         size_t update_many_records(query_compiler::CompiledUpdateQuery* query);
 
-        friend table_rebuild_statistics rebuild_table(ActiveTable** table);
+        friend TableRebuildStatistics rebuild_table(ActiveTable** table);
 
         bool is_internal;
 
@@ -98,10 +98,10 @@ class ActiveTable {
 
         // Create record buffer so operations don't need to constantly allocate the same buffer.
         // Needs refactoring with concurrent operations.
-        record_header* header_buffer;
+        TableRecordHeader* header_buffer;
 
-        bool verify_record_conditions_match(record_header* record, query_compiler::QueryComparator* conditions, uint32_t conditions_length);
-        void assemble_record_data_to_json(record_header* record, size_t included_columns, rapidjson::Document& output);
+        bool verify_record_conditions_match(TableRecordHeader* record, query_compiler::QueryComparator* conditions, uint32_t conditions_length);
+        void assemble_record_data_to_json(TableRecordHeader* record, size_t included_columns, rapidjson::Document& output);
 
         // Iterator for scanning the tables.
         // Performance when compiled with Ofast is comparable to a normal loop.
@@ -126,7 +126,7 @@ class ActiveTable {
                     return fread_unlocked(table->header_buffer, table->record_size, BULK_HEADER_READ_COUNT, table->data_handle);
                 }
 
-                inline record_header* operator*() { return reinterpret_cast<record_header*>(reinterpret_cast<uint8_t*>(table->header_buffer) + (buffer_index * table->record_size)); };
+                inline TableRecordHeader* operator*() { return reinterpret_cast<TableRecordHeader*>(reinterpret_cast<uint8_t*>(table->header_buffer) + (buffer_index * table->record_size)); };
                 inline bool operator!=(const data_iterator& _unused) { return !this->complete; }
         };
 
@@ -135,23 +135,23 @@ class ActiveTable {
             class record_wrapper {
                 public:
                     ActiveTable* table;
-                    record_header* record;
+                    TableRecordHeader* record;
 
-                    inline record_wrapper(ActiveTable* t, record_header* r) : table(t), record(r) {}
+                    inline record_wrapper(ActiveTable* t, TableRecordHeader* r) : table(t), record(r) {}
                     
                     inline NumericColumnData* get_numeric(std::string_view column_name) {
                         return (NumericColumnData*)(record->data + table->columns.find(column_name)->second->buffer_offset);
                     }
 
                     std::string get_dynamic(std::string_view column_name) {
-                        hashed_entry* entry = (hashed_entry*)(record->data + table->columns.find(column_name)->second->buffer_offset);
+                        TableHashedEntry* entry = (TableHashedEntry*)(record->data + table->columns.find(column_name)->second->buffer_offset);
 
                         // Create the empty string buffer.
                         std::string str_buffer;
                         str_buffer.resize(entry->size);
 
                         // Read the data into the string.
-                        pread(table->dynamic_handle, &str_buffer[0], entry->size, entry->record_location + sizeof(dynamic_record));
+                        pread(table->dynamic_handle, &str_buffer[0], entry->size, entry->record_location + sizeof(DynamicRecord));
 
                         return str_buffer;
                     }
@@ -161,14 +161,14 @@ class ActiveTable {
                 query_compiler::CompiledFindQuery* query;
                 ActiveTable* table;
                 data_iterator iterator;
-                record_header* current_record;
+                TableRecordHeader* current_record;
 
                 inline specific_data_iterator(ActiveTable* tbl, query_compiler::CompiledFindQuery* q) : query(q), table(tbl), iterator(table->begin()), current_record(*iterator) {}
 
                 specific_data_iterator operator++() {
                     while (!this->iterator.complete) {
                         ++this->iterator;
-                        record_header* record = *this->iterator;
+                        TableRecordHeader* record = *this->iterator;
 
                         if (this->table->verify_record_conditions_match(record, query->conditions, query->conditions_count)) {
                             current_record = record;
@@ -261,17 +261,17 @@ class ActiveTable {
 
     public:
         // TODO - make private in the future somehow.
-        std::map<std::string, table_column*, std::less<>> columns;
+        std::map<std::string, TableColumn*, std::less<>> columns;
         std::unordered_map<long, TablePermissions>* permissions = nullptr;
-        table_header header;
-        table_column* header_columns;
+        TableHeader header;
+        TableColumn* header_columns;
         std::string_view name;
 };
 
 // External table functions.
 bool table_exists(std::string_view name);
-void create_table(std::string_view table_name, table_column* columns, int length);
-table_rebuild_statistics rebuild_table(ActiveTable** table);
+void create_table(std::string_view table_name, TableColumn* columns, int length);
+TableRebuildStatistics rebuild_table(ActiveTable** table);
 
 // Table cache.
 extern std::unordered_map<std::string, ActiveTable*, MapStringViewHash, MapStringViewEqual> open_tables;

@@ -47,7 +47,7 @@ namespace query_compiler {
 
             auto column_find = table->columns.find(key);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-            table_column* column = column_find->second;
+            TableColumn* column = column_find->second;
             
             // Determine the condition type.
             auto type = value.type().value();
@@ -77,19 +77,19 @@ namespace query_compiler {
                             QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
                             std::string_view comparator = advanced_value.get_string();
 
-                            cmp.op = where_compare_op::STRING_CONTAINS;
+                            cmp.op = WhereComparoOp::STRING_CONTAINS;
                             cmp_info.comparator = comparator;
                         } else if (advanced_key == "==") {
                             QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
                             std::string_view comparator = advanced_value.get_string();
 
-                            cmp.op = where_compare_op::STRING_EQUAL;
+                            cmp.op = WhereComparoOp::STRING_EQUAL;
                             cmp_info.comparator = comparator;
                             cmp_info.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
                         } else if (advanced_key == "in") {
                             // TODO: Add version for short lists which uses a simple array instead of a hash structure.
                             QueryComparator::StringInList& cmp_info = cmp.info.set_as<QueryComparator::StringInList>();
-                            cmp.op = where_compare_op::STRING_IN_LIST;
+                            cmp.op = WhereComparoOp::STRING_IN_LIST;
                             cmp_info.shortest_string_length = UINT32T_MAX;
                             cmp_info.longest_string_length = 0;
                             
@@ -151,7 +151,7 @@ namespace query_compiler {
                         if (advanced_key == "in") {
                             // TODO: Add version for short lists which uses a simple array instead of a hash structure.
                             QueryComparator::NumericInList& cmp_info = cmp.info.set_as<QueryComparator::NumericInList>();
-                            cmp.op = where_compare_op::NUMERIC_IN_LIST;
+                            cmp.op = WhereComparoOp::NUMERIC_IN_LIST;
 
                             simdjson::ondemand::array keys = advanced_value.get_array();
 
@@ -166,11 +166,11 @@ namespace query_compiler {
                         
                         // Numeric comparisons with basic comparators.
                         else {
-                            if (advanced_key == "<") cmp.op = where_compare_op::NUMERIC_LESS_THAN;
-                            else if (advanced_key == ">") cmp.op = where_compare_op::NUMERIC_GREATER_THAN;
-                            else if (advanced_key == "<=") cmp.op = where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO;
-                            else if (advanced_key == ">=") cmp.op = where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO;
-                            else if (advanced_key == "==") cmp.op = where_compare_op::NUMERIC_EQUAL;
+                            if (advanced_key == "<") cmp.op = WhereComparoOp::NUMERIC_LESS_THAN;
+                            else if (advanced_key == ">") cmp.op = WhereComparoOp::NUMERIC_GREATER_THAN;
+                            else if (advanced_key == "<=") cmp.op = WhereComparoOp::NUMERIC_LESS_THAN_EQUAL_TO;
+                            else if (advanced_key == ">=") cmp.op = WhereComparoOp::NUMERIC_GREATER_THAN_EQUAL_TO;
+                            else if (advanced_key == "==") cmp.op = WhereComparoOp::NUMERIC_EQUAL;
                             else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
                             
                             QueryComparator::Numeric& cmp_info = cmp.info.set_as<QueryComparator::Numeric>();
@@ -194,7 +194,7 @@ namespace query_compiler {
 
                         std::string_view comparator = value.get_string();
 
-                        cmp.op = where_compare_op::STRING_EQUAL;
+                        cmp.op = WhereComparoOp::STRING_EQUAL;
                         cmp.negated = false;
                         cmp.column_index = column->index;
                         cmp_info.comparator = comparator;
@@ -208,7 +208,7 @@ namespace query_compiler {
                         QueryComparator& cmp = conditions[conditions_count];
                         QueryComparator::Numeric& cmp_info = cmp.info.set_as<QueryComparator::Numeric>();
 
-                        cmp.op = where_compare_op::NUMERIC_EQUAL;
+                        cmp.op = WhereComparoOp::NUMERIC_EQUAL;
                         cmp.negated = false;
                         cmp.column_index = column->index;
 
@@ -255,7 +255,7 @@ namespace query_compiler {
             for (std::string_view column_name : return_columns) {
                 auto column_find = table->columns.find(column_name);
                 if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-                table_column* f_column = column_find->second;
+                TableColumn* f_column = column_find->second;
 
                 // Set the bit for the column.
                 filtered_columns |= (1 << f_column->index);
@@ -281,7 +281,7 @@ namespace query_compiler {
 
             auto column_find = table->columns.find(column_name);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-            table_column* column = column_find->second;
+            TableColumn* column = column_find->second;
 
             // Check if column has already been iterated.
             size_t column_bit = (1 << column->index);
@@ -376,7 +376,7 @@ namespace query_compiler {
 
             auto column_find = table->columns.find(column_name);
             if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
-            table_column* column = column_find->second;
+            TableColumn* column = column_find->second;
 
             // Check if column has already been iterated.
             size_t column_bit = (1 << column->index);
@@ -396,7 +396,7 @@ namespace query_compiler {
 
                     UpdateSet& update = compiled_query->changes[updates_count];
                     UpdateSet::String& update_info = update.info.set_as<UpdateSet::String>();
-                    update.op = update_changes_op::STRING_SET;
+                    update.op = UpdateChangesOp::STRING_SET;
                     update.column_index = column->index;
                     update_info.new_value = data;
                     update_info.new_value_hash = XXH64(data.data(), data.length(), HASH_SEED);
@@ -407,7 +407,7 @@ namespace query_compiler {
                 default: {
                     UpdateSet& update = compiled_query->changes[updates_count];
                     UpdateSet::Numeric& update_info = update.info.set_as<UpdateSet::Numeric>();
-                    update.op = update_changes_op::NUMERIC_SET;
+                    update.op = UpdateChangesOp::NUMERIC_SET;
                     update.column_index = column->index;
                     
                     // Set data depending on type.

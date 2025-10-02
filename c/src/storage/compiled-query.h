@@ -13,7 +13,7 @@
 /* STRINGS HERE REFERENCE THE QUERY-PROVIDED STRING BUFFERS WHICH BECOME INVALID AFTER THE QUERY FINISHES! */
 
 namespace query_compiler {
-    enum where_compare_op : uint8_t {
+    enum WhereComparoOp : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
         NUMERIC_GREATER_THAN,
@@ -25,7 +25,7 @@ namespace query_compiler {
         STRING_IN_LIST
     };
 
-    enum update_changes_op : uint8_t {
+    enum UpdateChangesOp : uint8_t {
         STRING_SET,
         NUMERIC_SET
     };
@@ -59,7 +59,7 @@ namespace query_compiler {
             StringInList
         >;
 
-        where_compare_op op;
+        WhereComparoOp op;
         uint32_t column_index;
         bool negated;
 
@@ -68,14 +68,14 @@ namespace query_compiler {
 
     struct UpdateSet {
         struct Numeric : NoCopy {
-            update_changes_op op;
+            UpdateChangesOp op;
             uint32_t column_index;
     
             NumericColumnData new_value;
         };
     
         struct String : NoCopy {
-            update_changes_op op;
+            UpdateChangesOp op;
             uint32_t column_index;
     
             std::string_view new_value;
@@ -87,7 +87,7 @@ namespace query_compiler {
             Numeric
         >;
 
-        update_changes_op op;
+        UpdateChangesOp op;
         uint32_t column_index;
 
         UpdateInfo info;

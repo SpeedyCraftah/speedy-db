@@ -142,7 +142,7 @@ int main(int argc, char** args) {
 
         // Create the table permissions table which holds permission data on all tables.
 
-        table_column columns[3];
+        TableColumn columns[3];
 
         // Unique identifier of permission entry.
         columns[0].index = 0;

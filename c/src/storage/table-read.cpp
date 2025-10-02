@@ -4,15 +4,15 @@
 
 using namespace query_compiler;
 
-bool ActiveTable::verify_record_conditions_match(record_header* record, query_compiler::QueryComparator* conditions, uint32_t conditions_length) {
+bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, query_compiler::QueryComparator* conditions, uint32_t conditions_length) {
     // Go over all conditions for record.
     for (uint32_t i = 0; i < conditions_length; i++) {
         query_compiler::QueryComparator& generic_cmp = conditions[i];
-        table_column& column = this->header_columns[generic_cmp.column_index];
+        TableColumn& column = this->header_columns[generic_cmp.column_index];
         NumericColumnData* data = (NumericColumnData*)(record->data + column.buffer_offset);
 
         switch (generic_cmp.op) {
-            case query_compiler::where_compare_op::NUMERIC_EQUAL: {
+            case query_compiler::WhereComparoOp::NUMERIC_EQUAL: {
                 query_compiler::QueryComparator::Numeric& cmp = generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 
                 switch (column.type) {
@@ -26,7 +26,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::NUMERIC_GREATER_THAN: {
+            case query_compiler::WhereComparoOp::NUMERIC_GREATER_THAN: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
                     case ColumnType::Byte: if ((cmp.comparator.byte >= data->byte) ^ generic_cmp.negated) return false; break;
@@ -39,7 +39,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::NUMERIC_GREATER_THAN_EQUAL_TO: {
+            case query_compiler::WhereComparoOp::NUMERIC_GREATER_THAN_EQUAL_TO: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
                     case ColumnType::Byte: if ((cmp.comparator.byte > data->byte) ^ generic_cmp.negated) return false; break;
@@ -52,7 +52,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::NUMERIC_LESS_THAN: {
+            case query_compiler::WhereComparoOp::NUMERIC_LESS_THAN: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
                     case ColumnType::Byte: if ((cmp.comparator.byte <= data->byte) ^ generic_cmp.negated) return false; break;
@@ -65,7 +65,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::NUMERIC_LESS_THAN_EQUAL_TO: {
+            case query_compiler::WhereComparoOp::NUMERIC_LESS_THAN_EQUAL_TO: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
                 switch (column.type) {
                     case ColumnType::Byte: if ((cmp.comparator.byte < data->byte) ^ generic_cmp.negated) return false; break;
@@ -78,7 +78,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::NUMERIC_IN_LIST: {
+            case query_compiler::WhereComparoOp::NUMERIC_IN_LIST: {
                 query_compiler::QueryComparator::NumericInList& cmp = generic_cmp.info.as<query_compiler::QueryComparator::NumericInList>();
                 
                 NumericColumnData value;
@@ -96,9 +96,9 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::STRING_EQUAL: {
+            case query_compiler::WhereComparoOp::STRING_EQUAL: {
                 query_compiler::QueryComparator::String& cmp = generic_cmp.info.as<query_compiler::QueryComparator::String>();
-                hashed_entry* entry = (hashed_entry*)data;
+                TableHashedEntry* entry = (TableHashedEntry*)data;
 
                 bool condition_passed = false;
 
@@ -111,7 +111,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                     char* dynamic_data = (char*)malloc(entry->size);
                     
                     // Read the dynamic data to the allocated space.
-                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(DynamicRecord));
                     if (pread_result != entry->size) {
                         /* Will be improved after disk read overhaul */
                         logerr("Error or incorrect number of bytes returned from pread for dynamic string");
@@ -138,9 +138,9 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::STRING_CONTAINS: {
+            case query_compiler::WhereComparoOp::STRING_CONTAINS: {
                 query_compiler::QueryComparator::String& cmp = generic_cmp.info.as<query_compiler::QueryComparator::String>();
-                hashed_entry* entry = (hashed_entry*)data;
+                TableHashedEntry* entry = (TableHashedEntry*)data;
 
                 bool condition_passed = false;
 
@@ -153,7 +153,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                     std::string_view dynamic_data_sv = std::string_view(dynamic_data, entry->size);
                     
                     // Read the dynamic data to the allocated space.
-                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(DynamicRecord));
                     if (pread_result != entry->size) {
                         /* Will be improved after disk read overhaul */
                         logerr("Error or incorrect number of bytes returned from pread for dynamic string");
@@ -179,9 +179,9 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                 break;
             }
 
-            case query_compiler::where_compare_op::STRING_IN_LIST: {
+            case query_compiler::WhereComparoOp::STRING_IN_LIST: {
                 query_compiler::QueryComparator::StringInList& cmp = generic_cmp.info.as<query_compiler::QueryComparator::StringInList>();
-                hashed_entry* entry = (hashed_entry*)data;
+                TableHashedEntry* entry = (TableHashedEntry*)data;
 
                 bool condition_passed = false;
 
@@ -199,7 +199,7 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
                     std::string_view ro_dynamic_string = std::string_view(dynamic_data, entry->size);
 
                     // Read the dynamic data to the allocated space.
-                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(dynamic_record));
+                    ssize_t pread_result = pread(this->dynamic_handle, dynamic_data, entry->size, entry->record_location + sizeof(DynamicRecord));
                     if (pread_result != entry->size) {
                         /* Will be improved after disk read overhaul */
                         logerr("Error or incorrect number of bytes returned from pread for dynamic string");
@@ -233,23 +233,23 @@ bool ActiveTable::verify_record_conditions_match(record_header* record, query_co
     return true;
 }
 
-void ActiveTable::assemble_record_data_to_json(record_header* record, size_t included_columns, rapidjson::Document& output) {
+void ActiveTable::assemble_record_data_to_json(TableRecordHeader* record, size_t included_columns, rapidjson::Document& output) {
     output.SetObject();
     for (uint32_t i = 0; i < this->header.num_columns; i++) {
         if ((included_columns & (1 << i)) == 0) continue;
-        table_column& column = this->header_columns[i];
+        TableColumn& column = this->header_columns[i];
         std::string_view column_name(column.name, column.name_length);
 
         NumericColumnData* data = (NumericColumnData*)(record->data + column.buffer_offset);
         switch (column.type) {
             case ColumnType::String: {
-                hashed_entry* entry = (hashed_entry*)data;
+                TableHashedEntry* entry = (TableHashedEntry*)data;
                 
                 char* buffer = (char*)output.GetAllocator().Malloc(entry->size);
                 std::string_view buffer_sv(buffer, entry->size);
 
                 // Read the dynamic data.
-                ssize_t pread_result = pread(this->dynamic_handle, buffer, entry->size, entry->record_location + sizeof(dynamic_record));
+                ssize_t pread_result = pread(this->dynamic_handle, buffer, entry->size, entry->record_location + sizeof(DynamicRecord));
                 if (pread_result != entry->size) {
                     /* Will be improved after disk read overhaul */
                     logerr("Error or incorrect number of bytes returned from pread for dynamic string");
@@ -274,9 +274,9 @@ bool ActiveTable::find_one_record(query_compiler::CompiledFindQuery* query, rapi
     this->op_mutex.lock();
 
     size_t offset_counter = query->offset;
-    for (record_header* r_header : *this) {
+    for (TableRecordHeader* r_header : *this) {
         // If the block is empty, skip to the next one.
-        if ((r_header->flags & record_flags::active) == 0) continue;
+        if ((r_header->flags & TableRecordFlags::active) == 0) continue;
 
         // Check if record matches conditions.
         if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
@@ -302,9 +302,9 @@ void ActiveTable::find_many_records(query_compiler::CompiledFindQuery* query, ra
     result.SetArray();
 
     size_t offset_counter = query->offset;
-    for (record_header* r_header : *this) {
+    for (TableRecordHeader* r_header : *this) {
         // If the block is empty, skip to the next one.
-        if ((r_header->flags & record_flags::active) == 0) continue;
+        if ((r_header->flags & TableRecordFlags::active) == 0) continue;
 
         // Check if record matches conditions.
         if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {

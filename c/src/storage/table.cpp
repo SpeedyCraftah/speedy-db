@@ -46,27 +46,27 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     this->dynamic_handle = open(dynamic_path.c_str(), O_RDWR | O_CREAT, 0666);
 
     // Read the header.
-    size_t fread_result = fread_unlocked(&this->header, 1, sizeof(table_header), header_handle);
-    if (fread_result != sizeof(table_header)) {
+    size_t fread_result = fread_unlocked(&this->header, 1, sizeof(TableHeader), header_handle);
+    if (fread_result != sizeof(TableHeader)) {
         logerr("Error or incorrect number of bytes returned from fread_unlocked for table header");
         exit(1);
     }
 
-    this->record_size += sizeof(record_header);
+    this->record_size += sizeof(TableRecordHeader);
 
     // Allocate memory for columns.
-    this->header_columns = (table_column*)calloc(1, sizeof(table_column) * header.num_columns);
+    this->header_columns = (TableColumn*)calloc(1, sizeof(TableColumn) * header.num_columns);
 
     // Read the columns and write them to the struct.
-    fread_result = fread_unlocked(this->header_columns, 1, sizeof(table_column) * header.num_columns, header_handle);
-    if (fread_result != sizeof(table_column) * header.num_columns) {
+    fread_result = fread_unlocked(this->header_columns, 1, sizeof(TableColumn) * header.num_columns, header_handle);
+    if (fread_result != sizeof(TableColumn) * header.num_columns) {
         logerr("Error or incorrect number of bytes returned from fread_unlocked for table columns");
         exit(1);
     }
 
     // Load the columns to the map.
     for (uint32_t i = 0; i < this->header.num_columns; i++) {
-        table_column& column = this->header_columns[i];
+        TableColumn& column = this->header_columns[i];
 
         // Keep index order intact.
         column.index = i;
@@ -75,7 +75,7 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
         column.buffer_offset = this->record_data_size;
 
         // Add sizes.
-        this->record_data_size += column.size == 0 ? sizeof(hashed_entry) : column.size;
+        this->record_data_size += column.size == 0 ? sizeof(TableHashedEntry) : column.size;
         this->hashed_column_count += column.size == 0 ? 1 : 0;
 
         this->columns[this->header_columns[i].name] = &this->header_columns[i];
@@ -84,7 +84,7 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     this->record_size += this->record_data_size;
 
     // Create record buffer.
-    this->header_buffer = (record_header*)malloc(this->record_size * BULK_HEADER_READ_COUNT);
+    this->header_buffer = (TableRecordHeader*)malloc(this->record_size * BULK_HEADER_READ_COUNT);
 
     // Set table name.
     this->name = this->header.name;
@@ -97,7 +97,7 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
         // Get permissions table.
         ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
-        query_builder::find_query<1> query(permissions_table);
+        query_builder::FindQuery<1> query(permissions_table);
         query.add_where_condition("table", query.string_equal_to(this->name));
 
         /* for future debugging */
@@ -176,7 +176,7 @@ bool table_exists(std::string_view name) {
     return state == 0;
 }
 
-void create_table(std::string_view table_name, table_column* columns, int length) {
+void create_table(std::string_view table_name, TableColumn* columns, int length) {
     if (!misc::name_string_legal(table_name)) {
         logerr("Safety check fail! Table with an unsafe name was almost created");
         std::terminate();
@@ -215,7 +215,7 @@ void create_table(std::string_view table_name, table_column* columns, int length
     FILE* handle = fopen(meta_path.c_str(), "r+b");
     
     // Create header.
-    table_header header;
+    TableHeader header;
     header.magic_number = TABLE_MAGIC_NUMBER;
     header.num_columns = length;
 
@@ -223,10 +223,10 @@ void create_table(std::string_view table_name, table_column* columns, int length
     memcpy(header.name, table_name.data(), table_name.length());
 
     // Write header to file.
-    fwrite_unlocked(&header, 1, sizeof(table_header), handle);
+    fwrite_unlocked(&header, 1, sizeof(TableHeader), handle);
 
     // Write all of the columns.
-    fwrite_unlocked(columns, 1, sizeof(table_column) * length, handle);
+    fwrite_unlocked(columns, 1, sizeof(TableColumn) * length, handle);
 
     // Close the file handle.
     fclose(handle);
@@ -234,12 +234,12 @@ void create_table(std::string_view table_name, table_column* columns, int length
     misc_op_mutex.unlock();
 }
 
-table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
+TableRebuildStatistics rebuild_table(ActiveTable** table_var) {
     ActiveTable* table = *table_var;
     bool is_internal = table->is_internal;
-    record_header* header = (record_header*)malloc(table->record_size);
+    TableRecordHeader* header = (TableRecordHeader*)malloc(table->record_size);
 
-    table_rebuild_statistics stats;
+    TableRebuildStatistics stats;
 
     misc_op_mutex.lock();
 
@@ -282,7 +282,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
         if (fields_read != (size_t)table->record_size) break;
 
         // If the block is empty, skip to the next one.
-        if ((header->flags & record_flags::active) == 0) {
+        if ((header->flags & TableRecordFlags::active) == 0) {
             stats.dead_record_count++;
             continue;
         }
@@ -291,7 +291,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
         
         // Check if any dynamic columns need rebuilding.
         for (uint32_t i = 0; i < table->header.num_columns; i++) {
-            table_column& column = table->header_columns[i];
+            TableColumn& column = table->header_columns[i];
 
             // Get the location of the column in the buffer.
             uint8_t* base = header->data + column.buffer_offset;
@@ -299,30 +299,30 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
             // If the column is dynamic.
             if (column.type == ColumnType::String) {
                 // Get information about the dynamic data.
-                hashed_entry* entry = (hashed_entry*)base;
+                TableHashedEntry* entry = (TableHashedEntry*)base;
 
                 // Allocate space for the dynamic data loading.
-                dynamic_record* dynamic_data = (dynamic_record*)malloc(sizeof(dynamic_record) + entry->size);
+                DynamicRecord* dynamic_data = (DynamicRecord*)malloc(sizeof(DynamicRecord) + entry->size);
 
                 // Read the dynamic data to the allocated space.
-                ssize_t pread_result = pread(table->dynamic_handle, dynamic_data, sizeof(dynamic_record) + entry->size, entry->record_location);
-                if (pread_result != (ssize_t)(sizeof(dynamic_record) + entry->size)) {
+                ssize_t pread_result = pread(table->dynamic_handle, dynamic_data, sizeof(DynamicRecord) + entry->size, entry->record_location);
+                if (pread_result != (ssize_t)(sizeof(DynamicRecord) + entry->size)) {
                     /* Will be improved after disk read overhaul */
                     logerr("Error or incorrect number of bytes returned from pread for dynamic string rebuild");
                     exit(1);
                 }
 
                 // Update short string statistic if short.
-                if (entry->size != dynamic_data->physical_size - sizeof(dynamic_record)) stats.short_dynamic_count++;
+                if (entry->size != dynamic_data->physical_size - sizeof(DynamicRecord)) stats.short_dynamic_count++;
 
                 // Update the record data for both records.
                 dynamic_data->record_location = ftell(new_data_handle);
-                dynamic_data->physical_size = entry->size + sizeof(dynamic_record);
+                dynamic_data->physical_size = entry->size + sizeof(DynamicRecord);
                 entry->record_location = ftell(new_dynamic_handle);
 
                 // Write the dynamic data to the new file.
-                size_t fwrite_result = fwrite_unlocked(dynamic_data, 1, sizeof(dynamic_record) + entry->size, new_dynamic_handle);
-                if (fwrite_result != sizeof(dynamic_record) + entry->size) {
+                size_t fwrite_result = fwrite_unlocked(dynamic_data, 1, sizeof(DynamicRecord) + entry->size, new_dynamic_handle);
+                if (fwrite_result != sizeof(DynamicRecord) + entry->size) {
                     /* Will be improved after disk read overhaul */
                     logerr("Error or incorrect number of bytes returned from fwrite_unlocked for dynamic string rebuild update");
                     exit(1);
