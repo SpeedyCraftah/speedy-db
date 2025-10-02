@@ -12,6 +12,7 @@
 #include "query-builder.h"
 #include "../main.h"
 #include "../misc/valid_string.h"
+#include "structures/types.h"
 
 // TODO - add mutex
 // TODO - preallocate record header for each handle instead of mallocing and freeing on every query
@@ -296,7 +297,7 @@ table_rebuild_statistics rebuild_table(ActiveTable** table_var) {
             uint8_t* base = header->data + column.buffer_offset;
 
             // If the column is dynamic.
-            if (column.type == types::string) {
+            if (column.type == ColumnType::String) {
                 // Get information about the dynamic data.
                 hashed_entry* entry = (hashed_entry*)base;
 

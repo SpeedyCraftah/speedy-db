@@ -19,7 +19,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         uint8_t* data_area = r_header->data + column.buffer_offset;
 
         // If the column is dynamic.
-        if (column.type == types::string) {
+        if (column.type == ColumnType::String) {
             query_compiler::InsertColumn::String& column_data = query->values[i].info.as<query_compiler::InsertColumn::String>();
             hashed_entry* entry = (hashed_entry*)data_area;
 
@@ -56,8 +56,8 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         else {
             query_compiler::InsertColumn::Numeric& column_data = query->values[i].info.as<query_compiler::InsertColumn::Numeric>();
             switch (column.type) {
-                case types::byte: *(int8_t*)data_area = *(int8_t*)&column_data.data; break;
-                case types::long64: *(long*)data_area = *(long*)&column_data.data; break;
+                case ColumnType::Byte: *(int8_t*)data_area = *(int8_t*)&column_data.data; break;
+                case ColumnType::Long64: *(long*)data_area = *(long*)&column_data.data; break;
                 
                 // Rest are 4 byte long values.
                 default: *(uint32_t*)data_area = *(uint32_t*)&column_data.data; break;
@@ -144,10 +144,10 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                             query_compiler::UpdateSet::Numeric& update = generic_update.info.as<query_compiler::UpdateSet::Numeric>();
                             
                             switch (column.type) {
-                                case types::byte: *record_data = *(uint8_t*)&update.new_value; break;
-                                case types::float32: *(float*)record_data = *(float*)&update.new_value; break;
-                                case types::integer: *(int*)record_data = *(int*)&update.new_value; break;
-                                case types::long64: *(long*)record_data = *(long*)&update.new_value; break;
+                                case ColumnType::Byte: *record_data = *(uint8_t*)&update.new_value; break;
+                                case ColumnType::Float32: *(float*)record_data = *(float*)&update.new_value; break;
+                                case ColumnType::Integer: *(int*)record_data = *(int*)&update.new_value; break;
+                                case ColumnType::Long64: *(long*)record_data = *(long*)&update.new_value; break;
                                 default: {};
                             }
 

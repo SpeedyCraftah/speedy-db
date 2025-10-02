@@ -2,7 +2,6 @@
 
 #include "compiled-query.h"
 #include "query-compiler.h"
-#include "table-reusable-types.h"
 #include "table.h"
 #include "../deps/xxh/xxh3.h"
 #include <string_view>
@@ -46,7 +45,7 @@ namespace query_builder {
                 return cmp;
             }
 
-            static QueryComparator numeric_equal_to(NumericType comparator) {
+            static QueryComparator numeric_equal_to(NumericColumnData comparator) {
                 QueryComparator cmp;
                 cmp.op = where_compare_op::NUMERIC_EQUAL;
                 cmp.negated = false;
@@ -56,7 +55,7 @@ namespace query_builder {
                 return cmp;
             }
 
-            static QueryComparator numeric_not_equal_to(NumericType comparator) {
+            static QueryComparator numeric_not_equal_to(NumericColumnData comparator) {
                 QueryComparator cmp = numeric_equal_to(comparator);
                 cmp.negated = true;
 
@@ -122,7 +121,7 @@ namespace query_builder {
                 return update;
             }
 
-            static UpdateSet update_numeric(NumericType value) {
+            static UpdateSet update_numeric(NumericColumnData value) {
                 UpdateSet update;
                 update.op = update_changes_op::NUMERIC_SET;
                 update.info.set_as<UpdateSet::Numeric>();
@@ -167,7 +166,7 @@ namespace query_builder {
                 column.info.as<InsertColumn::String>().data_hash = XXH64(value.data(), value.size(), HASH_SEED);
             }
 
-            void set_value(std::string_view column_name, NumericType value) {
+            void set_value(std::string_view column_name, NumericColumnData value) {
                 InsertColumn& column = values[this->resolve_column_index(column_name)];
                 column.info.set_as<InsertColumn::Numeric>();
                 column.info.as<InsertColumn::Numeric>().data = value;

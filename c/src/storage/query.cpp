@@ -17,26 +17,9 @@
 #include "../misc/valid_string.h"
 #include "compiled-query.h"
 #include "query-compiler.h"
+#include "structures/types.h"
 #include "table.h"
 #include <dirent.h>
-
-std::string_view type_int_to_string(types type) {
-    if (type == types::integer) return "integer";
-    else if (type == types::string) return "string";
-    else if (type == types::byte) return "byte";
-    else if (type == types::float32) return "float";
-    else if (type == types::long64) return "long";
-    else return std::string_view("");
-}
-
-types type_string_to_int(std::string_view& type) {
-    if (type == "integer") return types::integer;
-    else if (type == "string") return types::string;
-    else if (type == "byte") return types::byte;
-    else if (type == "float") return types::float32;
-    else if (type == "long") return types::long64;
-    else return (types)-1;
-}
 
 void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
     rapidjson::Document response_object;
@@ -222,9 +205,9 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
 
                 // Check if type exists.
                 std::string_view d = column_d["type"];
-                types type = type_string_to_int(d);
+                ColumnType type = string_to_column_type(d);
 
-                if (type == (types)-1) {
+                if (type == (ColumnType)-1) {
                     send_query_error(socket_data, nonce, query_error::params_invalid);
                     return;
                 }
@@ -234,11 +217,11 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 new_column.type = type;
 
                 // Compute size.
-                if (type == types::integer) new_column.size = 4;
-                else if (type == types::string) new_column.size = 0;
-                else if (type == types::byte) new_column.size = 1;
-                else if (type == types::float32) new_column.size = 4;
-                else if (type == types::long64) new_column.size = 8;
+                if (type == ColumnType::Integer) new_column.size = 4;
+                else if (type == ColumnType::String) new_column.size = 0;
+                else if (type == ColumnType::Byte) new_column.size = 1;
+                else if (type == ColumnType::Float32) new_column.size = 4;
+                else if (type == ColumnType::Long64) new_column.size = 8;
 
                 // Copy name.
                 memcpy(new_column.name, column_name.data(), column_name.length());
@@ -608,7 +591,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             for (uint32_t i = 0; i < table->header.num_columns; i++) {
                 table_column& column = table->header_columns[i];
                 std::string_view column_name = column.name;
-                std::string_view column_type_name = type_int_to_string(column.type);
+                std::string_view column_type_name = column_type_to_string(column.type);
 
                 rapidjson::Document column_object;
                 column_object.SetObject();

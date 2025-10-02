@@ -4,10 +4,10 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
-#include "table-reusable-types.h"
 #include "../structures/fast_variant.h"
 #include "../structures/no_copy.h"
 #include "../structures/short_store.h"
+#include "./structures/types.h"
 
 /* WARNING: UNDER NO CIRCUMSTANCES SHOULD THE STRUCTURES HERE BE RE-USED AFTER PROCESSING OF THE CURRENT QUERY */
 /* STRINGS HERE REFERENCE THE QUERY-PROVIDED STRING BUFFERS WHICH BECOME INVALID AFTER THE QUERY FINISHES! */
@@ -39,7 +39,7 @@ namespace query_compiler {
     
         // Used for signed/float comparisons as well, excluding LG/LT.
         struct Numeric : NoCopy {
-            NumericType comparator;
+            NumericColumnData comparator;
         };
 
         struct NumericInList : NoCopy {
@@ -71,7 +71,7 @@ namespace query_compiler {
             update_changes_op op;
             uint32_t column_index;
     
-            NumericType new_value;
+            NumericColumnData new_value;
         };
     
         struct String : NoCopy {
@@ -95,7 +95,7 @@ namespace query_compiler {
     
     struct InsertColumn {
         struct Numeric : NoCopy {
-            NumericType data;
+            NumericColumnData data;
         };
     
         struct String : NoCopy {

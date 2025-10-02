@@ -8,9 +8,9 @@
 #include "../deps/rapidjson/document.h"
 #include "compiled-query.h"
 #include "../logging/logger.h"
-#include "table-reusable-types.h"
 #include <map>
 #include "../misc/template_utils.h"
+#include "structures/types.h"
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
@@ -25,7 +25,7 @@
 struct table_column {
     char name[33] = {0};
     uint8_t name_length;
-    types type;
+    ColumnType type;
     uint32_t size;
     uint32_t index;
     uint32_t buffer_offset;
@@ -139,8 +139,8 @@ class ActiveTable {
 
                     inline record_wrapper(ActiveTable* t, record_header* r) : table(t), record(r) {}
                     
-                    inline NumericType* get_numeric(std::string_view column_name) {
-                        return (NumericType*)(record->data + table->columns.find(column_name)->second->buffer_offset);
+                    inline NumericColumnData* get_numeric(std::string_view column_name) {
+                        return (NumericColumnData*)(record->data + table->columns.find(column_name)->second->buffer_offset);
                     }
 
                     std::string get_dynamic(std::string_view column_name) {

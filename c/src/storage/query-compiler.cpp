@@ -1,6 +1,6 @@
 #include "query-compiler.h"
 #include "compiled-query.h"
-#include "table-reusable-types.h"
+#include "structures/types.h"
 #include "table.h"
 #include <memory>
 #include <string_view>
@@ -25,12 +25,12 @@ namespace query_compiler {
         "Your query does not contain all of the table columns which is required for this query."
     };
 
-    NumericType parse_numeric_sj_value(types column_type, simdjson::ondemand::value& value) {
-        NumericType numeric;
+    NumericColumnData parse_numeric_sj_value(ColumnType column_type, simdjson::ondemand::value& value) {
+        NumericColumnData numeric;
 
         switch (column_type) {
-            case types::integer: numeric.int32 = (int)value.get_int64(); break;
-            case types::float32: numeric.float32 = (float)value.get_double(); break;
+            case ColumnType::Integer: numeric.int32 = (int)value.get_int64(); break;
+            case ColumnType::Float32: numeric.float32 = (float)value.get_double(); break;
             default: numeric.unsigned64_raw = value.get_uint64(); break;
         }
 
@@ -57,7 +57,7 @@ namespace query_compiler {
                 simdjson::ondemand::object cmp_object = value.get_object();
 
                 // String advanced queries.
-                if (column->type == types::string) {
+                if (column->type == ColumnType::String) {
                     for (auto advanced_condition : cmp_object) {
                         QueryComparator& cmp = conditions[conditions_count];
                         cmp.column_index = column->index;
@@ -159,7 +159,7 @@ namespace query_compiler {
                             cmp_info.list.reserve(keys.count_elements());
 
                             for (simdjson::ondemand::value key : keys) {
-                                NumericType numeric = parse_numeric_sj_value(column->type, key);
+                                NumericColumnData numeric = parse_numeric_sj_value(column->type, key);
                                 cmp_info.list.insert(numeric.unsigned64_raw);
                             }
                         }
@@ -188,7 +188,7 @@ namespace query_compiler {
             // Direct comparison.
             else {
                 switch (column->type) {
-                    case types::string: {
+                    case ColumnType::String: {
                         QueryComparator& cmp = conditions[conditions_count];
                         QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
 
@@ -292,7 +292,7 @@ namespace query_compiler {
 
             // Set the column values.
             switch (column->type) {
-                case types::string: {
+                case ColumnType::String: {
                     if (value.type() != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
                     InsertColumn& val = compiled_query->values[column->index];
@@ -314,8 +314,8 @@ namespace query_compiler {
 
                     // Set data depending on type.
                     switch (column->type) {
-                        case types::float32: val_info.data.float32 = (float)value.get_double(); break;
-                        case types::integer: val_info.data.int32 = (int)value.get_int64(); break;
+                        case ColumnType::Float32: val_info.data.float32 = (float)value.get_double(); break;
+                        case ColumnType::Integer: val_info.data.int32 = (int)value.get_int64(); break;
                         default: val_info.data.unsigned64_raw = value.get_uint64(); break;
                     }
 
@@ -389,7 +389,7 @@ namespace query_compiler {
             json_type value_type = value.type();
 
             switch (column->type) {
-                case types::string: {
+                case ColumnType::String: {
                     if (value_type != json_type::string) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
                     std::string_view data = value.get_string();
@@ -412,8 +412,8 @@ namespace query_compiler {
                     
                     // Set data depending on type.
                     switch (column->type) {
-                        case types::float32: update_info.new_value.float32 = (float)value.get_double(); break;
-                        case types::integer: update_info.new_value.int32 = (int)value.get_int64(); break;
+                        case ColumnType::Float32: update_info.new_value.float32 = (float)value.get_double(); break;
+                        case ColumnType::Integer: update_info.new_value.int32 = (int)value.get_int64(); break;
                         default: update_info.new_value.unsigned64_raw = value.get_uint64(); break;
                     }
 
