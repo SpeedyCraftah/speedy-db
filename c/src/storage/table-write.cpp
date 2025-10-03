@@ -21,7 +21,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         // If the column is dynamic.
         if (column.type == ColumnType::String) {
             query_compiler::InsertColumn::String& column_data = query->values[i].info.as<query_compiler::InsertColumn::String>();
-            TableHashedEntry* entry = (TableHashedEntry*)data_area;
+            TableHashedColumn* entry = (TableHashedColumn*)data_area;
 
             size_t data_length = column_data.data.length();
 
@@ -148,7 +148,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                                 case ColumnType::Float32: *(float*)record_data = *(float*)&update.new_value; break;
                                 case ColumnType::Integer: *(int*)record_data = *(int*)&update.new_value; break;
                                 case ColumnType::Long64: *(long*)record_data = *(long*)&update.new_value; break;
-                                default: {};
+                                default: { __builtin_unreachable(); };
                             }
 
                             break;
@@ -156,7 +156,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
 
                         case query_compiler::UpdateChangesOp::STRING_SET: {
                             query_compiler::UpdateSet::String& update = generic_update.info.as<query_compiler::UpdateSet::String>();
-                            TableHashedEntry* entry = (TableHashedEntry*)record_data;
+                            TableHashedColumn* entry = (TableHashedColumn*)record_data;
                             
                             // Update the parameters.
                             entry->hash = update.new_value_hash;

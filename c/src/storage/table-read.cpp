@@ -33,7 +33,7 @@ bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, quer
                     case ColumnType::Float32: if ((cmp.comparator.float32 >= data->float32) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Long64: if ((cmp.comparator.long64 >= data->long64) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Integer: if ((cmp.comparator.int32 >= data->int32) ^ generic_cmp.negated) return false; break;
-                    default: {};
+                    default: { __builtin_unreachable(); };
                 }
 
                 break;
@@ -46,7 +46,7 @@ bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, quer
                     case ColumnType::Float32: if ((cmp.comparator.float32 > data->float32) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Long64: if ((cmp.comparator.long64 > data->long64) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Integer: if ((cmp.comparator.int32 > data->int32) ^ generic_cmp.negated) return false; break;
-                    default: {};
+                    default: { __builtin_unreachable(); };
                 }
 
                 break;
@@ -59,7 +59,7 @@ bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, quer
                     case ColumnType::Float32: if ((cmp.comparator.float32 <= data->float32) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Long64: if ((cmp.comparator.long64 <= data->long64) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Integer: if ((cmp.comparator.int32 <= data->int32) ^ generic_cmp.negated) return false; break;
-                    default: {};
+                    default: { __builtin_unreachable(); };
                 }
 
                 break;
@@ -72,7 +72,7 @@ bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, quer
                     case ColumnType::Float32: if ((cmp.comparator.float32 < data->float32) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Long64: if ((cmp.comparator.long64 < data->long64) ^ generic_cmp.negated) return false; break;
                     case ColumnType::Integer: if ((cmp.comparator.int32 < data->int32) ^ generic_cmp.negated) return false; break;
-                    default: {};
+                    default: { __builtin_unreachable(); };
                 }
 
                 break;
@@ -98,7 +98,7 @@ bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, quer
 
             case query_compiler::WhereComparoOp::STRING_EQUAL: {
                 query_compiler::QueryComparator::String& cmp = generic_cmp.info.as<query_compiler::QueryComparator::String>();
-                TableHashedEntry* entry = (TableHashedEntry*)data;
+                TableHashedColumn* entry = (TableHashedColumn*)data;
 
                 bool condition_passed = false;
 
@@ -140,7 +140,7 @@ bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, quer
 
             case query_compiler::WhereComparoOp::STRING_CONTAINS: {
                 query_compiler::QueryComparator::String& cmp = generic_cmp.info.as<query_compiler::QueryComparator::String>();
-                TableHashedEntry* entry = (TableHashedEntry*)data;
+                TableHashedColumn* entry = (TableHashedColumn*)data;
 
                 bool condition_passed = false;
 
@@ -181,7 +181,7 @@ bool ActiveTable::verify_record_conditions_match(TableRecordHeader* record, quer
 
             case query_compiler::WhereComparoOp::STRING_IN_LIST: {
                 query_compiler::QueryComparator::StringInList& cmp = generic_cmp.info.as<query_compiler::QueryComparator::StringInList>();
-                TableHashedEntry* entry = (TableHashedEntry*)data;
+                TableHashedColumn* entry = (TableHashedColumn*)data;
 
                 bool condition_passed = false;
 
@@ -243,7 +243,7 @@ void ActiveTable::assemble_record_data_to_json(TableRecordHeader* record, size_t
         NumericColumnData* data = (NumericColumnData*)(record->data + column.buffer_offset);
         switch (column.type) {
             case ColumnType::String: {
-                TableHashedEntry* entry = (TableHashedEntry*)data;
+                TableHashedColumn* entry = (TableHashedColumn*)data;
                 
                 char* buffer = (char*)output.GetAllocator().Malloc(entry->size);
                 std::string_view buffer_sv(buffer, entry->size);
