@@ -102,12 +102,6 @@ namespace speedystd {
                 this->size = other.size;
                 other.size = 0; // prevents a double free if other isn't init'd again and goes out of scope.
 
-                // If this string is using the heap, only copy over the pointer instead of copying over garbage bytes.
-                // TODO: rethink this
-                /*
-                if (!can_use_local_buffer(size)) this->ptr_or_sso.heap_buffer = other.ptr_or_sso.heap_buffer;
-                else this->ptr_or_sso = other.ptr_or_sso;
-                */
                 this->ptr_or_sso.heap_buffer = other.ptr_or_sso.heap_buffer;
             }
             
