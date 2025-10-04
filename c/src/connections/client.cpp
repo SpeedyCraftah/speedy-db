@@ -147,10 +147,10 @@ bool process_message(const char* buffer, uint32_t data_size, client_socket_data*
         object.SetObject();
         object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
         
-        rapidjson::Document data_object;
+        rapidjson::Document data_object(&object.GetAllocator());
         data_object.SetObject();
-        data_object.AddMember(rj_query_keys::error_code, QueryError::nonce_invalid, object.GetAllocator());
-        if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::nonce_invalid], object.GetAllocator());
+        data_object.AddMember(rj_query_keys::error_code, QueryError::nonce_invalid, data_object.GetAllocator());
+        if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::nonce_invalid], data_object.GetAllocator());
         object.AddMember(rj_query_keys::data, data_object, object.GetAllocator());
 
         send_json(socket_data, object);
@@ -215,7 +215,7 @@ void* client_connection_handle(void* arg) {
         object.SetObject();
         object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
         
-        rapidjson::Document data_object;
+        rapidjson::Document data_object(&object.GetAllocator());
         data_object.SetObject();
         data_object.AddMember(rj_query_keys::error_code, QueryError::handshake_config_json_invalid, object.GetAllocator());
         if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::handshake_config_json_invalid], object.GetAllocator());
@@ -250,7 +250,7 @@ void* client_connection_handle(void* arg) {
             object.SetObject();
             object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             
-            rapidjson::Document data_object;
+            rapidjson::Document data_object(&object.GetAllocator());
             data_object.SetObject();
             data_object.AddMember(rj_query_keys::error_code, QueryError::outdated_server_version, object.GetAllocator());
             if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::outdated_server_version], object.GetAllocator());
@@ -266,7 +266,7 @@ void* client_connection_handle(void* arg) {
             object.SetObject();
             object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             
-            rapidjson::Document data_object;
+            rapidjson::Document data_object(&object.GetAllocator());
             data_object.SetObject();
             data_object.AddMember(rj_query_keys::error_code, QueryError::outdated_client_version, object.GetAllocator());
             if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::outdated_client_version], object.GetAllocator());
@@ -289,7 +289,7 @@ void* client_connection_handle(void* arg) {
                 socket_data->encryption.enabled = true;
                 dh = crypto::dh::create_session();
 
-                rapidjson::Document cipher_object;
+                rapidjson::Document cipher_object(&handshake_object.GetAllocator());
                 cipher_object.SetObject();
                 cipher_object.AddMember("public_key", crypto::dh::export_public_key(dh), handshake_object.GetAllocator());
                 cipher_object.AddMember("prime", crypto::dh::export_prime(dh), handshake_object.GetAllocator());
@@ -305,7 +305,7 @@ void* client_connection_handle(void* arg) {
             object.SetObject();
             object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
 
-            rapidjson::Document data_object;
+            rapidjson::Document data_object(&object.GetAllocator());
             data_object.SetObject();
             data_object.AddMember(rj_query_keys::error_code, QueryError::traffic_encryption_mandatory, object.GetAllocator());
             if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::traffic_encryption_mandatory], object.GetAllocator());
@@ -329,7 +329,7 @@ void* client_connection_handle(void* arg) {
         socket_data->version.minor = version_minor;
     
         // Send back handshake success.
-        rapidjson::Document version_server_object;
+        rapidjson::Document version_server_object(&handshake_object.GetAllocator());
         version_server_object.SetObject();
         version_server_object.AddMember("major", server_config::version::major, handshake_object.GetAllocator());
         version_server_object.AddMember("minor", server_config::version::minor, handshake_object.GetAllocator());
@@ -434,7 +434,7 @@ void* client_connection_handle(void* arg) {
                 object.SetObject();
                 object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
                 
-                rapidjson::Document data_object;
+                rapidjson::Document data_object(&object.GetAllocator());
                 data_object.SetObject();
                 data_object.AddMember(rj_query_keys::error_code, QueryError::invalid_account_credentials, object.GetAllocator());
                 if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::invalid_account_credentials], object.GetAllocator());
@@ -458,7 +458,7 @@ void* client_connection_handle(void* arg) {
                 object.SetObject();
                 object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
                 
-                rapidjson::Document data_object;
+                rapidjson::Document data_object(&object.GetAllocator());
                 data_object.SetObject();
                 data_object.AddMember(rj_query_keys::error_code, QueryError::invalid_account_credentials, object.GetAllocator());
                 if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::invalid_account_credentials], object.GetAllocator());
@@ -496,7 +496,7 @@ void* client_connection_handle(void* arg) {
         object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
 
         // Send handshake failure.
-        rapidjson::Document data_object;
+        rapidjson::Document data_object(&object.GetAllocator());
         data_object.SetObject();
         data_object.AddMember(rj_query_keys::error_code, QueryError::handshake_config_json_invalid, object.GetAllocator());
         if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::handshake_config_json_invalid], object.GetAllocator());
@@ -534,7 +534,7 @@ void* client_connection_handle(void* arg) {
             object.SetObject();
             object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             
-            rapidjson::Document data_object;
+            rapidjson::Document data_object(&object.GetAllocator());
             data_object.SetObject();
             data_object.AddMember(rj_query_keys::error_code, QueryError::packet_size_exceeded, object.GetAllocator());
             if (error_text) data_object.AddMember(rj_query_keys::data, query_error_text[QueryError::packet_size_exceeded], object.GetAllocator());
@@ -553,7 +553,7 @@ void* client_connection_handle(void* arg) {
             object.SetObject();
             object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             
-            rapidjson::Document data_object;
+            rapidjson::Document data_object(&object.GetAllocator());
             data_object.SetObject();
             data_object.AddMember(rj_query_keys::error_code, QueryError::packet_size_exceeded, object.GetAllocator());
             if (error_text) data_object.AddMember(rj_query_keys::data, query_error_text[QueryError::packet_size_exceeded], object.GetAllocator());
@@ -575,7 +575,7 @@ void* client_connection_handle(void* arg) {
             object.SetObject();
             object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             
-            rapidjson::Document data_object;
+            rapidjson::Document data_object(&object.GetAllocator());
             data_object.SetObject();
             data_object.AddMember(rj_query_keys::error_code, QueryError::insufficient_memory, object.GetAllocator());
             if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::insufficient_memory], object.GetAllocator());
@@ -616,7 +616,7 @@ void* client_connection_handle(void* arg) {
             object.SetObject();
             object.AddMember(rj_query_keys::error, 1, object.GetAllocator());
             
-            rapidjson::Document data_object;
+            rapidjson::Document data_object(&object.GetAllocator());
             data_object.SetObject();
             data_object.AddMember(rj_query_keys::error_code, QueryError::overflow_protection_triggered, object.GetAllocator());
             if (error_text) data_object.AddMember(rj_query_keys::error_text, query_error_text[QueryError::overflow_protection_triggered], object.GetAllocator());
