@@ -151,6 +151,10 @@ namespace speedystd {
                 return *this;
             }
 
+            inline simple_string(const simple_string& other) {
+                this->operator=(other);
+            }
+
             inline static constexpr bool can_use_local_buffer(uint32_t size) {
                 return size <= sizeof(ptr_or_sso);
             }
