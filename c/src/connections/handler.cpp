@@ -84,7 +84,6 @@ void terminate_socket(int handle) {
         OPENSSL_free(data->encryption.aes_ctx);
     }
 
-
     // Free the socket object.
     delete data;
 
