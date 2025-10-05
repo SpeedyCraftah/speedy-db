@@ -7,11 +7,14 @@ It is also smaller than the standard library string (24 bytes, only matches the 
 We could boil it down even further down to just 16 bytes by removing 8 bytes from the SSO buffer, but we risk more heap allocations for small strings
     at a negligable performance gain over copying 8 less bytes, and preventing even a single extra malloc will more than pay that cost of copying an extra 8 bytes back
     (even despite this, still more efficient than std::string).
+This also supports acting as a basic string by taking in a string_view or a raw string.
 
 ONLY CAVEAT! There is no pointer to store if the heap or local buffer is used, hence on each dereference into a string_view
     it does an LE comparison on the size, this compiles down to a conditional move on the assembly level which does not risk branch misprediction
     so it is fine to do even in tight loops, but in the best case scenario the string is cached/only dereferenced once.
 */
+
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -25,6 +28,16 @@ namespace speedystd {
     class alignas(sizeof(char*)) simple_string {
         public:
             inline simple_string() {};
+            
+            simple_string(const char* raw_string) {
+                char* dest = this->init(strlen(raw_string));
+                memcpy(dest, raw_string, this->size);
+            }
+
+            simple_string(std::string_view string_view) {
+                char* dest = this->init(string_view.length());
+                memcpy(dest, string_view.data(), this->size);
+            }
 
             // Initializes the internal buffer or allocates space for the string on the heap, then returns a pointer to it.
             char* init(uint32_t size) {
@@ -47,16 +60,20 @@ namespace speedystd {
                 }
             }
 
-            // Allows interpreting the object as a string_view.
-            inline std::string_view as_string_view() const {
+            inline constexpr const char* data() const {
                 #if !defined(__OPTIMIZE__)
                     if (!has_already_init) {
-                        puts("Debug build check: calling code tried to derive a string_view from an uninitialized simple_string");
+                        puts("Debug build check: calling code tried to derive a data pointer from an uninitialized simple_string");
                         std::terminate();
                     }
                 #endif 
 
-                return std::string_view(can_use_local_buffer(size) ? ptr_or_sso.local_buffer : ptr_or_sso.heap_buffer, size);
+                return can_use_local_buffer(size) ? ptr_or_sso.local_buffer : ptr_or_sso.heap_buffer;
+            }
+
+            // Interpret the buffer as a string_view.
+            inline std::string_view as_string_view() const {
+                return std::string_view(this->data(), size);
             }
 
             inline explicit operator std::string_view() const { return as_string_view(); }
@@ -140,7 +157,7 @@ namespace speedystd {
 
                 this->size = other.size;
                 
-                // Copy just copy the local buffer, or the heap memory if required.
+                // Copy the local buffer, or the heap memory if required.
                 if (can_use_local_buffer(size)) {
                     this->ptr_or_sso = other.ptr_or_sso;
                 } else {
