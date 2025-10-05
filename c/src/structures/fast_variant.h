@@ -56,16 +56,35 @@ namespace speedystd {
       }
 
       fast_variant(fast_variant&& other) noexcept {
+        #if !defined(__OPTIMIZE__)
+            debug_view = std::tuple<Types*...>{reinterpret_cast<Types*>(buffer)...};
+        #endif
+
         this->selected_type = other.selected_type;
         if (selected_type != 0) move_object_impl<Types...>(std::move(other));
 
         other.selected_type = 0;
       }
       
+      // For this, we could in theory check if the other object has the same variant as us and then outsource the assignment move, but is it really worth the effort?
+      // We will almost never use this operator, it is mostly a gimmick, so not worth the effort.
       fast_variant& operator=(fast_variant&& other) noexcept {
-        this->selected_type = other.selected_type;
-        if (selected_type != 0) move_object_impl<Types...>(std::move(other));
+        // Check for any self-assignment in debug mode.
+        #if !defined(__OPTIMIZE__)
+          if (this == &other) {
+            puts("Debug build check: calling code tried self-assign std::move(fast_variant)");
+            std::terminate();
+          }
+        #endif
 
+        // If we have an object, destroy it.
+        if (this->selected_type != 0) destroy_object_impl<Types...>();
+
+        // If other has an active object, we need to move the other object to us.
+        if (other.selected_type != 0) move_object_impl<Types...>(std::move(other));
+
+        // Now, we just do a regular move for everything else.
+        this->selected_type = other.selected_type;
         other.selected_type = 0;
         
         return *this;
