@@ -18,14 +18,14 @@ namespace speedystd {
   template <typename... Types>
   class fast_variant {
     public:
-      fast_variant() {
+      constexpr fast_variant() {
         #if !defined(__OPTIMIZE__)
             debug_view = std::tuple<Types*...>{reinterpret_cast<Types*>(buffer)...};
         #endif
       }
   
       template <typename T>
-      inline T& set_as() {
+      constexpr inline T& set_as() {
         #if !defined(__OPTIMIZE__)
           if (selected_type != 0) {
             puts("Debug build check: calling code tried to set the variant type twice!");
@@ -40,7 +40,7 @@ namespace speedystd {
       }
   
       template <typename T>
-      inline T& as() {
+      constexpr inline T& as() {
         #if !defined(__OPTIMIZE__)
           if (selected_type != get_selector_for_type<T>()) {
             puts("Debug build check: calling code tried to get variant not in use!");
@@ -51,11 +51,11 @@ namespace speedystd {
         return *reinterpret_cast<T*>(buffer);
       }
   
-      ~fast_variant() {
+      constexpr ~fast_variant() {
         if (selected_type != 0) destroy_object_impl<Types...>();
       }
 
-      fast_variant(fast_variant&& other) noexcept {
+      constexpr fast_variant(fast_variant&& other) noexcept {
         #if !defined(__OPTIMIZE__)
             debug_view = std::tuple<Types*...>{reinterpret_cast<Types*>(buffer)...};
         #endif
@@ -68,7 +68,7 @@ namespace speedystd {
       
       // For this, we could in theory check if the other object has the same variant as us and then outsource the assignment move, but is it really worth the effort?
       // We will almost never use this operator, it is mostly a gimmick, so not worth the effort.
-      fast_variant& operator=(fast_variant&& other) noexcept {
+      constexpr fast_variant& operator=(fast_variant&& other) noexcept {
         // Check for any self-assignment in debug mode.
         #if !defined(__OPTIMIZE__)
           if (this == &other) {
@@ -126,7 +126,7 @@ namespace speedystd {
       }
   
       template <typename First, typename... Rest>
-      void destroy_object_impl() {
+      constexpr void destroy_object_impl() {
         if (selected_type == sizeof...(Types) - sizeof...(Rest)) {
           reinterpret_cast<First*>(buffer)->~First();
         }
@@ -137,7 +137,7 @@ namespace speedystd {
       }
 
       template <typename First, typename... Rest>
-      void move_object_impl(fast_variant&& other) {
+      constexpr void move_object_impl(fast_variant&& other) {
         if (other.selected_type == sizeof...(Types) - sizeof...(Rest)) {
           new (this->buffer) First(std::move(*reinterpret_cast<First*>(&other.buffer)));
         }
