@@ -8,4 +8,4 @@ node_modules
 js/*
 !js/driver.js
 !js/package.json
-!js/columnsorter.js
+!js/columnsorter-demo.js

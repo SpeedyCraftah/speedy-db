@@ -1,7 +1,17 @@
+/**
+ * Comments courtesy of AI!!
+ * This is a data structure memory layout analyzer and optimizer.
+ * It helps analyze and visualize memory alignment, padding, and potential performance issues
+ * in struct-like data structures by simulating their memory layout.
+ */
+
 function padding(amount) {
     return { padding: true, size: amount, alignment: 1 };
 }
 
+/**
+ * Define the basic data types with their sizes and alignment requirements
+ */
 const types = {
     byte: { size: 1, alignment: 1, name: "byte" },
     integer: { size: 4, alignment: 4, name: "integer" },
@@ -10,8 +20,14 @@ const types = {
 
 types["string"] = { size: 20, alignment: 8, name: "string", accessPatterns: [types.long, types.long, types.integer] };
 
-let columns = [types.string, types.byte, types.byte, types.long, types.integer, types.long, types.byte];
+/**
+ * Sample data structure layout to analyze
+ * Contains a mix of different data types to demonstrate alignment and padding effects
+ */
+let columns = [types.byte, types.integer, types.long, types.byte, types.integer, types.byte, types.long, types.integer, types.byte, types.long];
 
+// Find the largest alignment requirement and sort columns by alignment
+// This helps optimize the memory layout
 const columnsLargestAlignment = Math.max(...columns.map(c => c.alignment));
 columns.sort((a, b) => a.alignment - b.alignment);
 
@@ -37,11 +53,18 @@ if (structSize % columnsLargestAlignment !== 0) {
 
 columns = newColumns;
 
+/**
+ * Simulation parameters and performance counters
+ * Analyzes multiple instances of the structure to detect:
+ * - Misaligned memory accesses
+ * - Cache line boundary crossings
+ * - Page boundary crossings
+ */
 const runCount = 5;
 
-let cacheBoundaryCross = 0;
-let misalignedReads = 0;
-let pageBoundaryCross = 0;
+let cacheBoundaryCross = 0;   // Count of cache line (64 bytes) boundary crossings
+let misalignedReads = 0;      // Count of misaligned memory accesses
+let pageBoundaryCross = 0;    // Count of page (4KB) boundary crossings
 
 let address = 4096;
 for (let i = 0; i < runCount; i++) {
