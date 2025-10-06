@@ -20,8 +20,10 @@
 #include "permissions/accounts.h"
 #include <cstdlib>
 #include "misc/files.h"
+#include "storage/table-basic.h"
 #include "storage/table.h"
 #include <csignal>
+#include <vector>
 
 // Global variable holding the socket ID.
 int server_socket_id;
@@ -32,7 +34,7 @@ std::unordered_map<std::string, DatabaseAccount*, MapStringViewHash, MapStringVi
 FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
-int server_config::version::major = 9;
+int server_config::version::major = 10;
 int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
@@ -140,33 +142,15 @@ int main(int argc, char** args) {
         // Create accounts storage file.
         fclose(fopen(account_bin_path.c_str(), "a"));
 
-        // Create the table permissions table which holds permission data on all tables.
-
-        TableColumn columns[3];
-
-        // Unique identifier of permission entry.
-        columns[0].index = 0;
-        columns[0].name_length = sizeof("index") - 1;
-        strcpy(columns[0].name, "index");
-        columns[0].size = sizeof(size_t);
-        columns[0].type = ColumnType::Long64;
-
-        // Name of target table.
-        columns[1].index = 1;
-        columns[1].name_length = sizeof("table") - 1;
-        strcpy(columns[1].name, "table");
-        columns[1].size = 0;
-        columns[1].type = ColumnType::String;
-
-        // Permission bitfield of entry.
-        columns[2].index = 2;
-        columns[2].name_length = sizeof("permissions") - 1;
-        strcpy(columns[2].name, "permissions");
-        columns[2].size = sizeof(uint8_t);
-        columns[2].type = ColumnType::Byte;
+        // Create the permissions table which holds permission data on all tables.
+        std::vector<TableCreateColumn> columns {
+            TableCreateColumn { "index", ColumnType::Long64 },
+            TableCreateColumn { "table", ColumnType::String },
+            TableCreateColumn { "permissions", ColumnType::Byte }
+        };
 
         // Create account table permissions table.
-        create_table("--internal-table-permissions", columns, 3);
+        create_table("--internal-table-permissions", columns);
     }
 
     // Register exit handler.

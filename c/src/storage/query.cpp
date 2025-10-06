@@ -20,6 +20,7 @@
 #include "structures/types.h"
 #include "table.h"
 #include <dirent.h>
+#include "structures/types.h"
 
 void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
     rapidjson::Document response_object;
@@ -124,16 +125,18 @@ inline ActiveTable* _ensure_table_open(DatabaseAccount* account, client_socket_d
 void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondemand::document& data) {
     DatabaseAccount* account = socket_data->account;
 
-    QueryOp op;
     simdjson::ondemand::object d;
 
-    if (data[sj_query_keys::op].get((size_t&)op) != simdjson::error_code::SUCCESS) {
+    size_t raw_op;
+    if (data[sj_query_keys::op].get(raw_op) != simdjson::error_code::SUCCESS) {
         send_query_error(socket_data, nonce, QueryError::op_invalid);
         return;
     } else if (data[sj_query_keys::data].get(d) != simdjson::error_code::SUCCESS) {
         send_query_error(socket_data, nonce, QueryError::data_invalid);
         return;
     }
+
+    QueryOp op = (QueryOp)raw_op;
 
     if (op >= QueryOp::NoQueryFoundPlaceholder) {
         send_query_error(socket_data, nonce, QueryError::op_invalid);
@@ -193,7 +196,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Allocate space for the columns.
             size_t iteration = 0;
 
-            std::unique_ptr<TableColumn[]> columns(new TableColumn[columns_object_count]);
+            std::vector<TableCreateColumn> columns(columns_object_count);
             for (auto item : columns_object) {
                 std::string_view column_name = item.unescaped_key();
                 if (!misc::column_name_string_legal(column_name)) {
@@ -213,26 +216,16 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 }
 
                 // Setup struct.
-                TableColumn new_column;
+                TableCreateColumn new_column;
                 new_column.type = type;
-
-                // Compute size.
-                if (type == ColumnType::Integer) new_column.size = 4;
-                else if (type == ColumnType::String) new_column.size = 0;
-                else if (type == ColumnType::Byte) new_column.size = 1;
-                else if (type == ColumnType::Float32) new_column.size = 4;
-                else if (type == ColumnType::Long64) new_column.size = 8;
-
-                // Copy name.
-                memcpy(new_column.name, column_name.data(), column_name.length());
-                new_column.name_length = column_name.length();
+                new_column.name = std::string(column_name);
 
                 columns[iteration] = new_column;
                 ++iteration;
             }
 
             // Create table.
-            create_table(name, columns.get(), columns_object_count);
+            create_table(name, columns);
             
             send_query_response(socket_data, nonce);
             return;
@@ -582,23 +575,28 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             rapidjson::Document json;
             json.SetObject();
             json.AddMember("name", rapidjson_string_view(table->name), json.GetAllocator());
-            json.AddMember("column_count", table->header.num_columns, json.GetAllocator());
+            json.AddMember("column_count", table->column_count, json.GetAllocator());
 
             rapidjson::Document columns;
             columns.SetObject();
 
             // Iterate over columns.
             for (uint32_t i = 0; i < table->header.num_columns; i++) {
-                TableColumn& column = table->header_columns[i];
+                TableColumn& column = table->actual_header_columns[i];
+                if (column.is_implementation) continue;
+
                 std::string_view column_name = column.name;
                 std::string_view column_type_name = column_type_to_string(column.type);
 
                 rapidjson::Document column_object;
                 column_object.SetObject();
                 column_object.AddMember("name", rapidjson_string_view(column_name), json.GetAllocator());
-                column_object.AddMember("size", column.size, json.GetAllocator());
+                column_object.AddMember("size", column_type_sizeof(column.type), json.GetAllocator());
                 column_object.AddMember("type", rapidjson_string_view(column_type_name), json.GetAllocator());
-                column_object.AddMember("physical_index", column.index, json.GetAllocator());
+
+                // Column index is spoofed so have to work it out here.
+                // Technically we could lie here, but we want to give the calling program an accurate idea of the table layout.
+                column_object.AddMember("physical_index", i, json.GetAllocator());
 
                 columns.AddMember(rapidjson_string_view(column_name), column_object, json.GetAllocator());
             }

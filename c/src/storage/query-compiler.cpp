@@ -60,7 +60,7 @@ namespace query_compiler {
                 if (column->type == ColumnType::String) {
                     for (auto advanced_condition : cmp_object) {
                         QueryComparator& cmp = conditions[conditions_count];
-                        cmp.column_index = column->index;
+                        cmp.column = column;
 
                         std::string_view advanced_key = advanced_condition.unescaped_key();
                         auto advanced_value = advanced_condition.value();
@@ -77,19 +77,19 @@ namespace query_compiler {
                             QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
                             std::string_view comparator = advanced_value.get_string();
 
-                            cmp.op = WhereComparoOp::STRING_CONTAINS;
+                            cmp.op = WhereCompareOp::STRING_CONTAINS;
                             cmp_info.comparator = comparator;
                         } else if (advanced_key == "==") {
                             QueryComparator::String& cmp_info = cmp.info.set_as<QueryComparator::String>();
                             std::string_view comparator = advanced_value.get_string();
 
-                            cmp.op = WhereComparoOp::STRING_EQUAL;
+                            cmp.op = WhereCompareOp::STRING_EQUAL;
                             cmp_info.comparator = comparator;
                             cmp_info.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
                         } else if (advanced_key == "in") {
                             // TODO: Add version for short lists which uses a simple array instead of a hash structure.
                             QueryComparator::StringInList& cmp_info = cmp.info.set_as<QueryComparator::StringInList>();
-                            cmp.op = WhereComparoOp::STRING_IN_LIST;
+                            cmp.op = WhereCompareOp::STRING_IN_LIST;
                             cmp_info.shortest_string_length = UINT32T_MAX;
                             cmp_info.longest_string_length = 0;
                             
@@ -134,7 +134,7 @@ namespace query_compiler {
                 else {
                     for (auto advanced_condition : cmp_object) {
                         QueryComparator& cmp = conditions[conditions_count];
-                        cmp.column_index = column->index;
+                        cmp.column = column;
 
                         std::string_view advanced_key = advanced_condition.unescaped_key();
                         auto advanced_value = advanced_condition.value();
@@ -151,7 +151,7 @@ namespace query_compiler {
                         if (advanced_key == "in") {
                             // TODO: Add version for short lists which uses a simple array instead of a hash structure.
                             QueryComparator::NumericInList& cmp_info = cmp.info.set_as<QueryComparator::NumericInList>();
-                            cmp.op = WhereComparoOp::NUMERIC_IN_LIST;
+                            cmp.op = WhereCompareOp::NUMERIC_IN_LIST;
 
                             simdjson::ondemand::array keys = advanced_value.get_array();
 
@@ -166,11 +166,11 @@ namespace query_compiler {
                         
                         // Numeric comparisons with basic comparators.
                         else {
-                            if (advanced_key == "<") cmp.op = WhereComparoOp::NUMERIC_LESS_THAN;
-                            else if (advanced_key == ">") cmp.op = WhereComparoOp::NUMERIC_GREATER_THAN;
-                            else if (advanced_key == "<=") cmp.op = WhereComparoOp::NUMERIC_LESS_THAN_EQUAL_TO;
-                            else if (advanced_key == ">=") cmp.op = WhereComparoOp::NUMERIC_GREATER_THAN_EQUAL_TO;
-                            else if (advanced_key == "==") cmp.op = WhereComparoOp::NUMERIC_EQUAL;
+                            if (advanced_key == "<") cmp.op = WhereCompareOp::NUMERIC_LESS_THAN;
+                            else if (advanced_key == ">") cmp.op = WhereCompareOp::NUMERIC_GREATER_THAN;
+                            else if (advanced_key == "<=") cmp.op = WhereCompareOp::NUMERIC_LESS_THAN_EQUAL_TO;
+                            else if (advanced_key == ">=") cmp.op = WhereCompareOp::NUMERIC_GREATER_THAN_EQUAL_TO;
+                            else if (advanced_key == "==") cmp.op = WhereCompareOp::NUMERIC_EQUAL;
                             else throw query_compiler::exception(query_compiler::error::INVALID_CONDITION);
                             
                             QueryComparator::Numeric& cmp_info = cmp.info.set_as<QueryComparator::Numeric>();
@@ -194,9 +194,9 @@ namespace query_compiler {
 
                         std::string_view comparator = value.get_string();
 
-                        cmp.op = WhereComparoOp::STRING_EQUAL;
+                        cmp.op = WhereCompareOp::STRING_EQUAL;
                         cmp.negated = false;
-                        cmp.column_index = column->index;
+                        cmp.column = column;
                         cmp_info.comparator = comparator;
                         cmp_info.comparator_hash = XXH64(comparator.data(), comparator.length(), HASH_SEED);
 
@@ -208,9 +208,9 @@ namespace query_compiler {
                         QueryComparator& cmp = conditions[conditions_count];
                         QueryComparator::Numeric& cmp_info = cmp.info.set_as<QueryComparator::Numeric>();
 
-                        cmp.op = WhereComparoOp::NUMERIC_EQUAL;
+                        cmp.op = WhereCompareOp::NUMERIC_EQUAL;
                         cmp.negated = false;
-                        cmp.column_index = column->index;
+                        cmp.column = column;
 
                         // Parse the number.
                         cmp_info.comparator = parse_numeric_sj_value(column->type, value.value());
@@ -271,9 +271,9 @@ namespace query_compiler {
         std::unique_ptr<CompiledInsertQuery> compiled_query(new CompiledInsertQuery);
 
         // Allocate columns.length size of buffer since all columns are required at the moment for inserts.
-        compiled_query->values = new InsertColumn[table->header.num_columns];
+        compiled_query->values = new InsertColumn[table->column_count];
 
-        // Iterate over the columns specified.
+        // Iterate over the columns specified (with internal columns already 'specified').
         size_t columns_iterated = 0;
         for (auto column_data : query_object) {
             std::string_view column_name = column_data.unescaped_key();
@@ -325,7 +325,7 @@ namespace query_compiler {
         }
 
         // Check if all columns have been specified.
-        if (columns_iterated != (UINT64T_MAX >> (64 - table->header.num_columns))) throw query_compiler::exception(error::UNSPECIFIED_COLUMNS);
+        if (columns_iterated != (UINT64T_MAX >> (64 - table->column_count))) throw query_compiler::exception(error::UNSPECIFIED_COLUMNS);
 
         // Return query.
         return compiled_query.release();
@@ -362,7 +362,7 @@ namespace query_compiler {
 
         // Create buffer to hold every possible update operation.
         // TODO - reduce this to only required columns.
-        compiled_query->changes = new UpdateSet[table->header.num_columns];
+        compiled_query->changes = new UpdateSet[table->column_count];
 
         simdjson::ondemand::object updates_object = query_object["changes"];
 
@@ -397,7 +397,7 @@ namespace query_compiler {
                     UpdateSet& update = compiled_query->changes[updates_count];
                     UpdateSet::String& update_info = update.info.set_as<UpdateSet::String>();
                     update.op = UpdateChangesOp::STRING_SET;
-                    update.column_index = column->index;
+                    update.column = column;
                     update_info.new_value = data;
                     update_info.new_value_hash = XXH64(data.data(), data.length(), HASH_SEED);
 
@@ -408,7 +408,7 @@ namespace query_compiler {
                     UpdateSet& update = compiled_query->changes[updates_count];
                     UpdateSet::Numeric& update_info = update.info.set_as<UpdateSet::Numeric>();
                     update.op = UpdateChangesOp::NUMERIC_SET;
-                    update.column_index = column->index;
+                    update.column = column;
                     
                     // Set data depending on type.
                     switch (column->type) {

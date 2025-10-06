@@ -1,4 +1,7 @@
 #include "compiled-query.h"
+#include "structures/record.h"
+#include "table-basic.h"
+#include "table-iterators.h"
 #include "table.h"
 #include <cstdio>
 #include <unistd.h>
@@ -6,22 +9,21 @@
 void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
     this->op_mutex.lock();
 
-    TableRecordHeader* r_header = this->header_buffer;
+    Record record = Record(*this, this->header_buffer);
     
     // Set default flags.
-    r_header->flags = TableRecordFlags::active | TableRecordFlags::dirty;
+    *record.get_flags() = RecordFlags::Active;
 
     // Seek to end of data file.
     fseek(this->data_handle, 0, SEEK_END);
 
-    for (uint32_t i = 0; i < this->header.num_columns; i++) {
+    for (uint32_t i = 0; i < this->column_count; i++) {
         TableColumn& column = this->header_columns[i];
-        uint8_t* data_area = r_header->data + column.buffer_offset;
 
         // If the column is dynamic.
         if (column.type == ColumnType::String) {
             query_compiler::InsertColumn::String& column_data = query->values[i].info.as<query_compiler::InsertColumn::String>();
-            TableHashedColumn* entry = (TableHashedColumn*)data_area;
+            HashedColumnData* entry = record.get_hashed(&column);
 
             size_t data_length = column_data.data.length();
 
@@ -55,18 +57,20 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         // Column is numeric.
         else {
             query_compiler::InsertColumn::Numeric& column_data = query->values[i].info.as<query_compiler::InsertColumn::Numeric>();
+            NumericColumnData* data = record.get_numeric(&column);
+
             switch (column.type) {
-                case ColumnType::Byte: *(int8_t*)data_area = *(int8_t*)&column_data.data; break;
-                case ColumnType::Long64: *(long*)data_area = *(long*)&column_data.data; break;
+                case ColumnType::Byte: data->byte = column_data.data.byte; break;
+                case ColumnType::Long64: data->long64 = column_data.data.long64; break;
                 
                 // Rest are 4 byte long values.
-                default: *(uint32_t*)data_area = *(uint32_t*)&column_data.data; break;
+                default: data->unsigned32_raw = column_data.data.unsigned32_raw; break;
             }
         }
     }
 
     // Write to the file.
-    fwrite_unlocked(r_header, 1, this->record_size, this->data_handle);
+    fwrite_unlocked((RecordData*)record, 1, this->header.record_size, this->data_handle);
 
     this->op_mutex.unlock();
 }
@@ -75,23 +79,20 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
     this->op_mutex.lock();
 
     size_t count = 0;
-    for (auto it = this->bulk_begin(), end = this->bulk_end(); it != end; ++it) {
-        uint32_t available = *it;
-
+    for (auto info : table_iterator::iterate_bulk(*this)) {
         bool changes_made = false;
-        for (uint32_t i = 0; i < available; i++) {
-            TableRecordHeader* r_header = reinterpret_cast<TableRecordHeader*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
+        for (uint32_t i = 0; i < info.available; i++) {
+            Record record = Record(*this, this->header_buffer + (i * this->header.record_size));
             
             // If the block is empty, skip to the next one.
-            if ((r_header->flags & TableRecordFlags::active) == 0) {
+            if ((*record.get_flags() & RecordFlags::Active) == 0) {
                 continue;
             }
 
             // Check if record matches conditions.
-            if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
-                // Mark the record as deleted and mark for optimisation.
-                r_header->flags &= ~TableRecordFlags::active;
-                r_header->flags |= TableRecordFlags::available_optimisation;
+            if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
+                // Mark the record as deleted.
+                *record.get_flags() &= ~RecordFlags::Active;
 
                 count++;
                 changes_made = true;
@@ -101,8 +102,8 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
 
         // Write the updated records in bulk with precise handle (if any).
         if (changes_made) {
-            ssize_t write_result = pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
-            if (write_result != (ssize_t)(available * this->record_size)) {
+            ssize_t write_result = pwrite(this->data_handle_precise, this->header_buffer, info.available * this->header.record_size, info.byte_offset);
+            if (write_result != (ssize_t)(info.available * this->header.record_size)) {
                 /* Will be improved after disk read overhaul */
                 logerr("Error or incorrect number of bytes returned from write for dynamic string");
                 exit(1);
@@ -120,35 +121,32 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
     this->op_mutex.lock();
 
     size_t count = 0;
-    for (auto it = this->bulk_begin(), end = this->bulk_end(); it != end; ++it) {
-        uint32_t available = *it;
-
+    for (auto info : table_iterator::iterate_bulk(*this)) {
         bool changes_made = false;
-        for (uint32_t i = 0; i < available; i++) {
-            TableRecordHeader* r_header = reinterpret_cast<TableRecordHeader*>(reinterpret_cast<uint8_t*>(this->header_buffer) + (i * this->record_size));
+        for (uint32_t i = 0; i < info.available; i++) {
+            Record record = Record(*this, this->header_buffer + (i * this->header.record_size));
             
             // If the block is empty, skip to the next one.
-            if ((r_header->flags & TableRecordFlags::active) == 0) {
+            if ((*record.get_flags() & RecordFlags::Active) == 0) {
                 continue;
             }
 
             // Check if record matches conditions.
-            if (verify_record_conditions_match(r_header, query->conditions, query->conditions_count)) {
+            if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
                 for (uint32_t j = 0; j < query->changes_count; j++) {
                     query_compiler::UpdateSet& generic_update = query->changes[j];
-                    TableColumn& column = this->header_columns[generic_update.column_index];
-                    uint8_t* record_data = r_header->data + column.buffer_offset;
 
                     switch (generic_update.op) {
                         case query_compiler::UpdateChangesOp::NUMERIC_SET: {
                             query_compiler::UpdateSet::Numeric& update = generic_update.info.as<query_compiler::UpdateSet::Numeric>();
+                            NumericColumnData* data = record.get_numeric(generic_update.column);
                             
-                            switch (column.type) {
-                                case ColumnType::Byte: *record_data = *(uint8_t*)&update.new_value; break;
-                                case ColumnType::Float32: *(float*)record_data = *(float*)&update.new_value; break;
-                                case ColumnType::Integer: *(int*)record_data = *(int*)&update.new_value; break;
-                                case ColumnType::Long64: *(long*)record_data = *(long*)&update.new_value; break;
-                                default: { __builtin_unreachable(); };
+                            switch (generic_update.column->type) {
+                                case ColumnType::Byte: data->byte = update.new_value.byte; break;
+                                case ColumnType::Long64: data->long64 = update.new_value.long64; break;
+                                
+                                // Rest are 4 byte long values.
+                                default: data->unsigned32_raw = update.new_value.unsigned32_raw; break;
                             }
 
                             break;
@@ -156,7 +154,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
 
                         case query_compiler::UpdateChangesOp::STRING_SET: {
                             query_compiler::UpdateSet::String& update = generic_update.info.as<query_compiler::UpdateSet::String>();
-                            TableHashedColumn* entry = (TableHashedColumn*)record_data;
+                            HashedColumnData* entry = record.get_hashed(generic_update.column);
                             
                             // Update the parameters.
                             entry->hash = update.new_value_hash;
@@ -220,8 +218,8 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
         }
 
         if (changes_made) {
-            ssize_t pwrite_result = pwrite(this->data_handle_precise, this->header_buffer, available * this->record_size, it.bulk_byte_offset());
-            if (pwrite_result != (ssize_t)(available * this->record_size)) {
+            ssize_t pwrite_result = pwrite(this->data_handle_precise, this->header_buffer, info.available * this->header.record_size, info.byte_offset);
+            if (pwrite_result != (ssize_t)(info.available * this->header.record_size)) {
                 /* Will be improved after disk read overhaul */
                 logerr("Error or incorrect number of bytes returned from pwrite for record updates");
                 exit(1);

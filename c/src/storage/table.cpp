@@ -1,4 +1,5 @@
 #include "table.h"
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <openssl/types.h>
@@ -12,10 +13,10 @@
 #include "query-builder.h"
 #include "../main.h"
 #include "../misc/valid_string.h"
+#include "structures/record.h"
 #include "structures/types.h"
-
-// TODO - add mutex
-// TODO - preallocate record header for each handle instead of mallocing and freeing on every query
+#include "table-basic.h"
+#include "table-iterators.h"
 
 ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) : is_internal(is_internal) {
     if (!misc::name_string_legal(table_name)) {
@@ -46,45 +47,64 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     this->dynamic_handle = open(dynamic_path.c_str(), O_RDWR | O_CREAT, 0666);
 
     // Read the header.
-    size_t fread_result = fread_unlocked(&this->header, 1, sizeof(TableHeader), header_handle);
-    if (fread_result != sizeof(TableHeader)) {
+    size_t fread_result = fread_unlocked(&this->header, sizeof(TableHeader), 1, header_handle);
+    if (fread_result != 1) {
         logerr("Error or incorrect number of bytes returned from fread_unlocked for table header");
         exit(1);
     }
 
-    this->record_size += sizeof(TableRecordHeader);
-
     // Allocate memory for columns.
-    this->header_columns = (TableColumn*)calloc(1, sizeof(TableColumn) * header.num_columns);
+    this->actual_header_columns = (TableColumn*)calloc(header.num_columns, sizeof(TableColumn));
 
     // Read the columns and write them to the struct.
-    fread_result = fread_unlocked(this->header_columns, 1, sizeof(TableColumn) * header.num_columns, header_handle);
-    if (fread_result != sizeof(TableColumn) * header.num_columns) {
+    fread_result = fread_unlocked(this->actual_header_columns, sizeof(TableColumn), header.num_columns, header_handle);
+    if (fread_result != header.num_columns) {
         logerr("Error or incorrect number of bytes returned from fread_unlocked for table columns");
         exit(1);
     }
 
-    // Load the columns to the map.
+    // Load the columns to the map, except for the implementation columns (we want to track them explicitly).
+    uint32_t impl_column_count = 0;
     for (uint32_t i = 0; i < this->header.num_columns; i++) {
-        TableColumn& column = this->header_columns[i];
+        TableColumn& column = this->actual_header_columns[i];
+        if (column.is_implementation) {
+            this->impl_column_exclusion_bitfield |= (1 >> column.index);
+            ++impl_column_count;
 
-        // Keep index order intact.
-        column.index = i;
+            std::string_view column_name(column.name, column.name_length);
+            if (column_name == INTERNAL_COLUMN_IMPL_FLAGS_NAME) {
+                impl_flags_column = &column;
+            }
 
-        // Add buffer offset location (location of record in buffer).
-        column.buffer_offset = this->record_data_size;
+            continue;
+        }
 
-        // Add sizes.
-        this->record_data_size += column.size == 0 ? sizeof(TableHashedEntry) : column.size;
-        this->hashed_column_count += column.size == 0 ? 1 : 0;
-
-        this->columns[this->header_columns[i].name] = &this->header_columns[i];
+        this->columns[std::string(column.name, column.name_length)] = &this->actual_header_columns[i];
     }
 
-    this->record_size += this->record_data_size;
+    // Allocate memory for the column array which doesn't contain the internal columns.
+    this->header_columns = (TableColumn*)calloc(header.num_columns - impl_column_count, sizeof(TableColumn));
+
+    // Copy the non-internal columns into the array.
+    for (uint32_t i = 0; i < header.num_columns; i++) {
+        TableColumn& column = this->actual_header_columns[i];
+        if (!column.is_implementation) {
+            // Spoof the index of the column to not confuse code.
+            column.index = this->column_count;
+
+            this->header_columns[this->column_count] = column;
+            ++this->column_count;
+        }
+    }
+
+    // Safety check for important internal columns.
+    if (this->impl_flags_column == nullptr) {
+        logerr("Safety check fail! Table metadata did not contain mandatory internal column impl_flags");
+        std::terminate();
+    }
 
     // Create record buffer.
-    this->header_buffer = (TableRecordHeader*)malloc(this->record_size * BULK_HEADER_READ_COUNT);
+    this->header_buffer = (RecordData*)malloc(this->header.record_size * BULK_HEADER_READ_COUNT);
 
     // Set table name.
     this->name = this->header.name;
@@ -105,11 +125,11 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
         // std::vector<std::tuple<std::string, long, uint8_t>> elements;
 
         permissions_table->op_mutex.lock();
-        for (auto it = permissions_table->specific_begin(query.build()); !it; ++it) {
-            auto record = *it;
-            
-            uint8_t permissions = record.get_numeric("permissions")->byte;
-            long index = record.get_numeric("index")->long64;
+        TableColumn* permissions_column = permissions_table->columns["permissions"];
+        TableColumn* index_column = permissions_table->columns["index"];
+        for (Record record : table_iterator::iterate_specific(*permissions_table, query.build())) {
+            uint8_t permissions = record.get_numeric(permissions_column)->byte;
+            long index = record.get_numeric(index_column)->long64;
 
             // Safety check to see if a permission entry already exists for this user, and a duplicate was found.
             // This COULD be a debug-only check, but loading tables is rare so the added safety benefit is worth the slight performance cost.
@@ -137,23 +157,11 @@ ActiveTable::~ActiveTable() {
     if (this->permissions != nullptr) delete this->permissions;
 
     // Free columns.
+    free(this->actual_header_columns);
     free(this->header_columns);
 
     // Free record header.
     free(this->header_buffer);
-}
-
-ActiveTable::data_iterator ActiveTable::data_iterator::operator++() {
-    buffer_index++;
-
-    if (buffer_index >= buffer_records_available) {
-        buffer_index = 0;
-        buffer_records_available = request_bulk_records();
-    }
-
-    complete = (buffer_index >= buffer_records_available);
-
-    return *this;
 }
 
 std::mutex table_open_mutex;
@@ -176,7 +184,7 @@ bool table_exists(std::string_view name) {
     return state == 0;
 }
 
-void create_table(std::string_view table_name, TableColumn* columns, int length) {
+void create_table(std::string_view table_name, const std::vector<TableCreateColumn>& columns) {
     if (!misc::name_string_legal(table_name)) {
         logerr("Safety check fail! Table with an unsafe name was almost created");
         std::terminate();
@@ -213,20 +221,60 @@ void create_table(std::string_view table_name, TableColumn* columns, int length)
 
     // Open the file in r+w mode.
     FILE* handle = fopen(meta_path.c_str(), "r+b");
+
+    // Create a store for the physical columns, as well as extra for the internal columns.
+    std::vector<TableColumn> physical_columns(columns.size() + 1);
     
+    // Add the initial column which will be the flags/metadata for the row.
+    TableColumn& preamble_column = physical_columns[0];
+    preamble_column.is_implementation = true;
+    preamble_column.type = ColumnType::Byte;
+    preamble_column.name_length = strlen(INTERNAL_COLUMN_IMPL_FLAGS_NAME);
+    memcpy(preamble_column.name, INTERNAL_COLUMN_IMPL_FLAGS_NAME, preamble_column.name_length);
+
+    // Convert the simple column definitions into actual columns.
+    for (uint32_t i = 0; i < columns.size(); i++) {
+        const TableCreateColumn& column = columns[i];
+        TableColumn& physical_column = physical_columns[i + 1];
+        physical_column.type = column.type;
+        physical_column.is_implementation = false;
+
+        // Copy over the name.
+        memcpy(physical_column.name, column.name.c_str(), column.name.length());
+        physical_column.name_length = column.name.length();
+    }
+
+    // Now, sort the columns based on alignment requirements from smallest to largest.
+    std::sort(physical_columns.begin(), physical_columns.end(), [](const TableColumn& c1, const TableColumn& c2) {
+        return column_type_alignof(c1.type) < column_type_alignof(c2.type);
+    });
+
+    // Perform a final iteration to determine the buffer index and offset for each column.
+    // TODO: in the future this will also work out and add padding.
+    uint32_t total_buffer_offset = 0;
+    for (uint32_t i = 0; i < physical_columns.size(); i++) {
+        TableColumn& physical_column = physical_columns[i];
+        physical_column.index = i;
+        physical_column.buffer_offset = total_buffer_offset;
+
+        // Move the offset forwards for the next column.
+        total_buffer_offset += column_type_sizeof(physical_column.type);
+    }
+
     // Create header.
     TableHeader header;
     header.magic_number = TABLE_MAGIC_NUMBER;
-    header.num_columns = length;
+    header.record_size = total_buffer_offset;
+    header.num_columns = physical_columns.size();
 
     // Copy name.
     memcpy(header.name, table_name.data(), table_name.length());
 
     // Write header to file.
-    fwrite_unlocked(&header, 1, sizeof(TableHeader), handle);
+    fwrite_unlocked(&header, sizeof(TableHeader), 1, handle);
 
     // Write all of the columns.
-    fwrite_unlocked(columns, 1, sizeof(TableColumn) * length, handle);
+    fwrite_unlocked(physical_columns.data(), sizeof(TableColumn), physical_columns.size(), handle);
 
     // Close the file handle.
     fclose(handle);
@@ -237,7 +285,6 @@ void create_table(std::string_view table_name, TableColumn* columns, int length)
 TableRebuildStatistics rebuild_table(ActiveTable** table_var) {
     ActiveTable* table = *table_var;
     bool is_internal = table->is_internal;
-    TableRecordHeader* header = (TableRecordHeader*)malloc(table->record_size);
 
     TableRebuildStatistics stats;
 
@@ -272,17 +319,19 @@ TableRebuildStatistics rebuild_table(ActiveTable** table_var) {
 
     while (true) {
         // Read the header of the record.
-        size_t fields_read = fread_unlocked(header, 1, table->record_size, table->data_handle);
+        size_t fields_read = fread_unlocked(table->header_buffer, 1, table->header.record_size, table->data_handle);
         if (fields_read == (size_t)-1) {
             logerr("Error return from fread_unlocked while reading records for table rebuild");
             exit(1);
         }
 
         // End of file has been reached as read didn't return a record size.
-        if (fields_read != (size_t)table->record_size) break;
-
+        if (fields_read != (size_t)table->header.record_size) break;
+        
+        Record record(*table, table->header_buffer);
+        
         // If the block is empty, skip to the next one.
-        if ((header->flags & TableRecordFlags::active) == 0) {
+        if ((*record.get_flags() & RecordFlags::Active) == 0) {
             stats.dead_record_count++;
             continue;
         }
@@ -291,15 +340,12 @@ TableRebuildStatistics rebuild_table(ActiveTable** table_var) {
         
         // Check if any dynamic columns need rebuilding.
         for (uint32_t i = 0; i < table->header.num_columns; i++) {
-            TableColumn& column = table->header_columns[i];
-
-            // Get the location of the column in the buffer.
-            uint8_t* base = header->data + column.buffer_offset;
+            TableColumn& column = table->actual_header_columns[i];
 
             // If the column is dynamic.
             if (column.type == ColumnType::String) {
                 // Get information about the dynamic data.
-                TableHashedEntry* entry = (TableHashedEntry*)base;
+                HashedColumnData* entry = record.get_hashed(&column);
 
                 // Allocate space for the dynamic data loading.
                 DynamicRecord* dynamic_data = (DynamicRecord*)malloc(sizeof(DynamicRecord) + entry->size);
@@ -334,8 +380,8 @@ TableRebuildStatistics rebuild_table(ActiveTable** table_var) {
         }
 
         // Write the record to the new data file.
-        size_t fwrite_result = fwrite_unlocked(header, 1, table->record_size, new_data_handle);
-        if (fwrite_result != table->record_size) {
+        size_t fwrite_result = fwrite_unlocked((RecordData*)record, 1, table->header.record_size, new_data_handle);
+        if (fwrite_result != table->header.record_size) {
             /* Will be improved after disk read overhaul */
             logerr("Error or incorrect number of bytes returned from fwrite_unlocked for record insert in table rebuild");
             exit(1);
@@ -370,8 +416,6 @@ TableRebuildStatistics rebuild_table(ActiveTable** table_var) {
     // Reopen the table and replace variable with new pointer.
     *table_var = new ActiveTable(safe_table_name.c_str(), is_internal);
     open_tables[table->header.name] = *table_var;
-
-    free(header);
 
     return stats;
 }

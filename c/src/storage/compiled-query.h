@@ -8,12 +8,13 @@
 #include "../structures/no_copy.h"
 #include "../structures/short_store.h"
 #include "./structures/types.h"
+#include "table-basic.h"
 
 /* WARNING: UNDER NO CIRCUMSTANCES SHOULD THE STRUCTURES HERE BE RE-USED AFTER PROCESSING OF THE CURRENT QUERY */
 /* STRINGS HERE REFERENCE THE QUERY-PROVIDED STRING BUFFERS WHICH BECOME INVALID AFTER THE QUERY FINISHES! */
 
 namespace query_compiler {
-    enum WhereComparoOp : uint8_t {
+    enum WhereCompareOp : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
         NUMERIC_GREATER_THAN,
@@ -59,8 +60,8 @@ namespace query_compiler {
             StringInList
         >;
 
-        WhereComparoOp op;
-        uint32_t column_index;
+        WhereCompareOp op;
+        TableColumn* column;
         bool negated;
 
         ComparatorInfo info;
@@ -69,7 +70,7 @@ namespace query_compiler {
     struct UpdateSet {
         struct Numeric : NoCopy {
             UpdateChangesOp op;
-            uint32_t column_index;
+            TableColumn* column;
     
             NumericColumnData new_value;
         };
@@ -88,7 +89,7 @@ namespace query_compiler {
         >;
 
         UpdateChangesOp op;
-        uint32_t column_index;
+        TableColumn* column;
 
         UpdateInfo info;
     };
