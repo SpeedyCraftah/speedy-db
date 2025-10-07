@@ -135,7 +135,7 @@ struct TableCreateColumn {
     ColumnType type;
 };
 
-void create_table(std::string_view table_name, const std::vector<TableCreateColumn>& columns);
+void create_table(std::string_view table_name, const std::vector<TableCreateColumn>& columns, bool opt_allow_padding);
 
 TableRebuildStatistics rebuild_table(ActiveTable** table);
 
