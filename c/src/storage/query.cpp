@@ -169,6 +169,20 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 return;
             }
 
+            // Allows the record optimizer to insert padding to prevent unaligned access.
+            bool opt_allow_padding = false;
+
+            // Fetch the custom table options (if any).
+            simdjson::ondemand::object options_object;
+            if (d["options"].get(options_object) == simdjson::error_code::SUCCESS) {
+                if (
+                    options_object["allow_record_padding"].get(opt_allow_padding) == simdjson::error_code::INCORRECT_TYPE
+                ) {
+                    send_query_error(socket_data, nonce, QueryError::params_invalid);
+                    return;
+                }
+            }
+
             // Slow but doesn't matter in this query.
             size_t columns_object_count = columns_object.count_fields();
 
@@ -225,7 +239,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             }
 
             // Create table.
-            create_table(name, columns);
+            create_table(name, columns, opt_allow_padding);
             
             send_query_response(socket_data, nonce);
             return;

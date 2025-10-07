@@ -184,7 +184,7 @@ bool table_exists(std::string_view name) {
     return state == 0;
 }
 
-void create_table(std::string_view table_name, const std::vector<TableCreateColumn>& columns) {
+void create_table(std::string_view table_name, const std::vector<TableCreateColumn>& columns, bool opt_allow_padding) {
     if (!misc::name_string_legal(table_name)) {
         logerr("Safety check fail! Table with an unsafe name was almost created");
         std::terminate();
