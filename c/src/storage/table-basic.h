@@ -44,6 +44,9 @@ struct TableHeader {
     uint32_t record_size;
 };
 
+// This does not require padding as:
+// - We only ever instantiate one of this class, not an array of them, when accessing just one we will always have aligned access.
+// - And chars afterwards are always aligned regardless as they have a lax requirement of just 1.
 struct DynamicRecord {
     size_t record_location;
     uint32_t physical_size;
