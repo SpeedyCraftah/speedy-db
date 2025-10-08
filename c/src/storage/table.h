@@ -76,45 +76,6 @@ class ActiveTable {
         bool is_iterator_running = false;
         #endif
 
-        /*inline data_iterator begin() {
-            #ifndef __OPTIMIZE__
-                if (is_iterator_running) {
-                    logerr("[RUNTIME DEBUG] table '%s' iterator begin() called while another iterator is already running", this->header.name);
-                    exit(1);
-                }
-                is_iterator_running = true;
-            #endif
-
-            fseek(this->data_handle, 0, SEEK_SET);
-            data_iterator i = data_iterator(this);
-            i.operator++();
-            
-            return i;
-        }
-
-        inline data_iterator end() {
-            return data_iterator(nullptr);
-        }
-
-        inline specific_data_iterator specific_begin(query_compiler::CompiledFindQuery* query) {
-            specific_data_iterator i = specific_data_iterator(this, query);
-            if (!i.iterator.complete && !this->verify_record_conditions_match(i.current_record, query->conditions, query->conditions_count)) i.operator++();
-
-            return i;
-        }
-
-        inline bulk_data_iterator bulk_begin() {
-            fseek(this->data_handle, 0, SEEK_SET);
-            bulk_data_iterator i = bulk_data_iterator(this);
-            i.operator++();
-            i.records_byte_offset = 0;
-            return i;
-        }
-
-        inline bulk_data_iterator bulk_end() {
-            return bulk_data_iterator(nullptr);
-        }*/
-
     public:
         // TODO - make private in the future somehow.
         std::map<std::string, TableColumn*, std::less<>> columns;
