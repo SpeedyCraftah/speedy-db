@@ -31,14 +31,10 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     std::string meta_path = path + "/meta.bin";
     std::string data_path = path + "/data.bin";
     std::string dynamic_path = path + "/dynamic.bin";
-    std::string permissions_path = path + "/permissions.bin";
 
     // Open the files in r+w mode.
     FILE* header_handle = fopen(meta_path.c_str(), "r+b");
     fseek(header_handle, 0, SEEK_SET);
-
-    FILE* permissions_handle = fopen(permissions_path.c_str(), "r+b");
-    fseek(permissions_handle, 0, SEEK_SET);
 
     this->data_handle = fopen(data_path.c_str(), "r+b");
     this->data_handle_precise = fileno(this->data_handle);
@@ -50,6 +46,13 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     size_t fread_result = fread_unlocked(&this->header, sizeof(TableHeader), 1, header_handle);
     if (fread_result != 1) {
         logerr("Error or incorrect number of bytes returned from fread_unlocked for table header");
+        exit(1);
+    }
+
+    if (this->header.created_major_version != DB_SCHEMA_MAJOR_VERSION) {
+        logerr("Loaded table with schema version %u, but database only supports version %u", this->header.created_major_version, (uint32_t)DB_SCHEMA_MAJOR_VERSION);
+        logerr("Refused to load table because the schema version is incompatible with this version");
+        logerr("Ensure your tables are ported to the latest schema version before querying again");
         exit(1);
     }
 
@@ -145,7 +148,6 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
 
     // Close handles which are not needed.
     fclose(header_handle);
-    fclose(permissions_handle);
 }
 
 ActiveTable::~ActiveTable() {
@@ -205,7 +207,6 @@ void create_table(std::string_view table_name, const std::vector<TableCreateColu
     std::string meta_path = std::string(path).append("meta.bin");
     std::string data_path = std::string(path).append("data.bin");
     std::string dynamic_path = std::string(path).append("dynamic.bin");
-    std::string permissions_path = std::string(path).append("permissions.bin");
 
     // Create a file containing the table metadata.
     fclose(fopen(meta_path.c_str(), "a"));
@@ -215,9 +216,6 @@ void create_table(std::string_view table_name, const std::vector<TableCreateColu
 
     // Create a file containing the table dynamic data.
     fclose(fopen(dynamic_path.c_str(), "a"));
-
-    // Create a file containing the table account permissions.
-    fclose(fopen(permissions_path.c_str(), "a"));
 
     // Open the file in r+w mode.
     FILE* handle = fopen(meta_path.c_str(), "r+b");
@@ -249,23 +247,50 @@ void create_table(std::string_view table_name, const std::vector<TableCreateColu
         return column_type_alignof(c1.type) < column_type_alignof(c2.type);
     });
 
-    // Perform a final iteration to determine the buffer index and offset for each column.
-    // TODO: in the future this will also work out and add padding.
+    // Perform a final iteration to determine the buffer index and offset for each column (including any padding).
     uint32_t total_buffer_offset = 0;
     for (uint32_t i = 0; i < physical_columns.size(); i++) {
         TableColumn& physical_column = physical_columns[i];
         physical_column.index = i;
+
+        if (opt_allow_padding) {
+            size_t column_alignment = column_type_alignof(physical_column.type);
+
+            // If the column isn't aligned, we want to add padding.
+            size_t column_align_check = total_buffer_offset % column_alignment;
+            if (column_align_check != 0) {
+                // Add the padding we need right before the column data.
+                total_buffer_offset += column_alignment - column_align_check;
+            }
+        }
+
         physical_column.buffer_offset = total_buffer_offset;
 
         // Move the offset forwards for the next column.
         total_buffer_offset += column_type_sizeof(physical_column.type);
     }
+// steal a 4 alignment variable to pair with each string
+    if (opt_allow_padding) {
+        // Take the value with the strict alignment requirement from the columns (this will be the last entry because we've already sorted the columns!).
+        // Records are guaranteed to have at least one internal column so no boundary checks are needed.
+        size_t record_align_requirement = column_type_alignof(physical_columns.back().type);
+    
+        // Now we want to make sure the entire record is aligned, if not we can add final padding.
+        size_t record_align_check = total_buffer_offset % record_align_requirement;
+        if (record_align_check != 0) {
+            total_buffer_offset += record_align_requirement - record_align_check;
+        }
+    }
 
     // Create header.
     TableHeader header;
+    header.created_major_version = DB_SCHEMA_MAJOR_VERSION;
     header.magic_number = TABLE_MAGIC_NUMBER;
     header.record_size = total_buffer_offset;
     header.num_columns = physical_columns.size();
+
+    // Define the header options.
+    header.options.allow_padding = opt_allow_padding;
 
     // Copy name.
     memcpy(header.name, table_name.data(), table_name.length());
@@ -331,7 +356,7 @@ TableRebuildStatistics rebuild_table(ActiveTable** table_var) {
         Record record(*table, table->header_buffer);
         
         // If the block is empty, skip to the next one.
-        if ((*record.get_flags() & RecordFlags::Active) == 0) {
+        if (!record.get_flags()->active) {
             stats.dead_record_count++;
             continue;
         }

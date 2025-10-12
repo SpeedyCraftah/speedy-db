@@ -58,7 +58,6 @@ class ActiveTable {
     private:
         FILE* data_handle;
         int data_handle_precise;
-
         int dynamic_handle;
 
         std::mutex op_mutex;

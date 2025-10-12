@@ -248,7 +248,7 @@ bool ActiveTable::find_one_record(query_compiler::CompiledFindQuery* query, rapi
     size_t offset_counter = query->offset;
     for (Record record : table_iterator::iterate_all(*this)) {
         // If the block is empty, skip to the next one.
-        if ((*record.get_flags() & RecordFlags::Active) == 0) continue;
+        if (!record.get_flags()->active) continue;
 
         // Check if record matches conditions.
         if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
@@ -276,7 +276,7 @@ void ActiveTable::find_many_records(query_compiler::CompiledFindQuery* query, ra
     size_t offset_counter = query->offset;
     for (Record record : table_iterator::iterate_all(*this)) {
         // If the block is empty, skip to the next one.
-        if ((*record.get_flags() & RecordFlags::Active) == 0) continue;
+        if (!record.get_flags()->active) continue;
 
         // Check if record matches conditions.
         if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {

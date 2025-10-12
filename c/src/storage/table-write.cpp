@@ -12,7 +12,7 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
     Record record = Record(*this, this->header_buffer);
     
     // Set default flags.
-    *record.get_flags() = RecordFlags::Active;
+    record.get_flags()->active = true;
 
     // Seek to end of data file.
     fseek(this->data_handle, 0, SEEK_END);
@@ -85,14 +85,12 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
             Record record = Record(*this, this->header_buffer + (i * this->header.record_size));
             
             // If the block is empty, skip to the next one.
-            if ((*record.get_flags() & RecordFlags::Active) == 0) {
-                continue;
-            }
+            if (!record.get_flags()->active) continue;
 
             // Check if record matches conditions.
             if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
                 // Mark the record as deleted.
-                *record.get_flags() &= ~RecordFlags::Active;
+                record.get_flags()->active = false;
 
                 count++;
                 changes_made = true;
@@ -127,9 +125,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
             Record record = Record(*this, this->header_buffer + (i * this->header.record_size));
             
             // If the block is empty, skip to the next one.
-            if ((*record.get_flags() & RecordFlags::Active) == 0) {
-                continue;
-            }
+            if (!record.get_flags()->active) continue;
 
             // Check if record matches conditions.
             if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {

@@ -105,6 +105,9 @@ namespace table_iterator {
                         while (!this->d_iterator.complete) {
                             ++this->d_iterator;
                             RecordData* record = this->d_iterator.get_raw_record();
+
+                            // If the record is inactive, skip it.
+                            if (!Record(table, record).get_flags()->active) continue;
             
                             if (this->table.verify_record_conditions_match(record, query->conditions, query->conditions_count)) {
                                 current_record = record;
