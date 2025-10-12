@@ -58,10 +58,10 @@ void delete_database_account_unlocked(DatabaseAccount* account) {
     ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
     // Remove all table-specific permissions from account.
-    NumericType index_u;
+    NumericColumnData index_u;
     index_u.long64 = account->internal_index;
 
-    query_builder::erase_query<1> query(permissions_table);
+    query_builder::EraseQuery<1> query(permissions_table);
     query.add_where_condition("index", query.numeric_equal_to(index_u));
 
     permissions_table->erase_many_records(query.build());
@@ -83,11 +83,11 @@ void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount*
     ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
     // Prepare the account index for query.
-    NumericType index_u;
+    NumericColumnData index_u;
     index_u.long64 = account->internal_index;
 
     // Prepare the permissions for update.
-    NumericType permissions_u;
+    NumericColumnData permissions_u;
     permissions_u.byte = *(uint8_t*)&permissions;
 
     // Check if permissions are already set for this table and account.
@@ -95,7 +95,7 @@ void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount*
         // Delete existing set.
         table->permissions->erase(account->internal_index);
 
-        query_builder::update_query<2, 1> query(permissions_table);
+        query_builder::UpdateQuery<2, 1> query(permissions_table);
         query.add_where_condition("table", query.string_equal_to(table->name));
         query.add_where_condition("index", query.numeric_equal_to(index_u));
         query.add_change("permissions", query.update_numeric(permissions_u));
@@ -103,7 +103,7 @@ void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount*
         
         permissions_table->update_many_records(query.build());
     } else {
-        query_builder::insert_query<3> query(permissions_table);
+        query_builder::InsertQuery<3> query(permissions_table);
         query.set_value("index", index_u);
         query.set_value("permissions", permissions_u);
         query.set_value("table", table->name);
@@ -119,10 +119,10 @@ void set_table_account_permissions_unlocked(ActiveTable* table, DatabaseAccount*
 void delete_table_account_permissions(ActiveTable* table, DatabaseAccount* account) {
     ActiveTable* permissions_table = open_tables["--internal-table-permissions"];
 
-    NumericType index_u;
+    NumericColumnData index_u;
     index_u.long64 = account->internal_index;
 
-    query_builder::erase_query<2> query(permissions_table);
+    query_builder::EraseQuery<2> query(permissions_table);
     query.add_where_condition("table", query.string_equal_to(table->name));
     query.add_where_condition("index", query.numeric_equal_to(index_u));
     query.set_limit(1);

@@ -20,11 +20,13 @@
 #include "permissions/accounts.h"
 #include <cstdlib>
 #include "misc/files.h"
+#include "storage/table-basic.h"
 #include "storage/table.h"
 #include <csignal>
+#include <vector>
 
 // Global variable holding the socket ID.
-int server_socket_id;
+int server_socket_id = -1;
 int connections_size = 0;
 std::unordered_map<int, client_socket_data*> socket_connections;
 std::unordered_map<std::string, ActiveTable*, MapStringViewHash, MapStringViewEqual> open_tables;
@@ -32,8 +34,6 @@ std::unordered_map<std::string, DatabaseAccount*, MapStringViewHash, MapStringVi
 FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
-int server_config::version::major = 9;
-int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
 bool server_config::root_account_enabled = false;
@@ -43,10 +43,10 @@ std::string server_config::data_directory = "./data/";
 
 void on_terminate() {
     log("Killing socket and exiting");
-    close(server_socket_id);
+    if (server_socket_id != -1) close(server_socket_id);
 
     // Close all file handles and finalise table operations.
-    fclose(database_accounts_handle);
+    if (database_accounts_handle != nullptr) fclose(database_accounts_handle);
     for (auto t : open_tables) {
         delete t.second;
     }
@@ -140,33 +140,16 @@ int main(int argc, char** args) {
         // Create accounts storage file.
         fclose(fopen(account_bin_path.c_str(), "a"));
 
-        // Create the table permissions table which holds permission data on all tables.
-
-        table_column columns[3];
-
-        // Unique identifier of permission entry.
-        columns[0].index = 0;
-        columns[0].name_length = sizeof("index") - 1;
-        strcpy(columns[0].name, "index");
-        columns[0].size = sizeof(size_t);
-        columns[0].type = types::long64;
-
-        // Name of target table.
-        columns[1].index = 1;
-        columns[1].name_length = sizeof("table") - 1;
-        strcpy(columns[1].name, "table");
-        columns[1].size = 0;
-        columns[1].type = types::string;
-
-        // Permission bitfield of entry.
-        columns[2].index = 2;
-        columns[2].name_length = sizeof("permissions") - 1;
-        strcpy(columns[2].name, "permissions");
-        columns[2].size = sizeof(uint8_t);
-        columns[2].type = types::byte;
+        // Create the permissions table which holds permission data on all tables.
+        std::list<TableCreateColumn> columns {
+            TableCreateColumn { "index", ColumnType::Long64 },
+            TableCreateColumn { "table", ColumnType::String },
+            TableCreateColumn { "permissions", ColumnType::Byte }
+        };
 
         // Create account table permissions table.
-        create_table("--internal-table-permissions", columns, 3);
+        // We're not expecting to store much in these so won't waste much space with padding.
+        create_table("--internal-table-permissions", columns, true);
     }
 
     // Register exit handler.
