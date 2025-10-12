@@ -159,7 +159,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             if (!account->permissions.CREATE_TABLES) return query_error(QueryError::insufficient_privileges);
 
             // Allows the record optimizer to insert padding to prevent unaligned access.
-            bool opt_allow_layout_optimization = false;
+            bool opt_allow_layout_optimization = true;
 
             // Fetch the custom table options (if any).
             simdjson::ondemand::object options_object;
