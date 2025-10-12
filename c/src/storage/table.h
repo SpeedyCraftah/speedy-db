@@ -11,6 +11,7 @@
 #include <map>
 #include "../misc/template_utils.h"
 #include "table-basic.h"
+#include <list>
 
 #define HASH_SEED 8293236
 #define TABLE_MAGIC_NUMBER 3829859236
@@ -90,12 +91,21 @@ class ActiveTable {
 // External table functions.
 bool table_exists(std::string_view name);
 
-struct TableCreateColumn {
-    std::string name;
-    ColumnType type;
+class TableCreateColumn {
+    public:
+        TableCreateColumn(std::string name, ColumnType type) : name(name), type(type) {}
+        TableCreateColumn() {};
+
+        std::string name;
+        ColumnType type;
+        
+        friend void create_table(std::string_view table_name, std::list<TableCreateColumn> columns, bool opt_allow_layout_optimization);
+    private:
+        bool is_implementation = false;
+        bool resolved = false;
 };
 
-void create_table(std::string_view table_name, const std::vector<TableCreateColumn>& columns, bool opt_allow_padding);
+void create_table(std::string_view table_name, std::list<TableCreateColumn> columns, bool opt_allow_layout_optimization);
 
 TableRebuildStatistics rebuild_table(ActiveTable** table);
 

@@ -1,5 +1,6 @@
 #include "table.h"
 #include <algorithm>
+#include <climits>
 #include <cstddef>
 #include <cstdio>
 #include <openssl/types.h>
@@ -17,6 +18,7 @@
 #include "structures/types.h"
 #include "table-basic.h"
 #include "table-iterators.h"
+#include "../misc/algorithms.h"
 
 ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) : is_internal(is_internal) {
     if (!misc::name_string_legal(table_name)) {
@@ -186,7 +188,7 @@ bool table_exists(std::string_view name) {
     return state == 0;
 }
 
-void create_table(std::string_view table_name, const std::vector<TableCreateColumn>& columns, bool opt_allow_padding) {
+void create_table(std::string_view table_name, std::list<TableCreateColumn> columns, bool opt_allow_layout_optimization) {
     if (!misc::name_string_legal(table_name)) {
         logerr("Safety check fail! Table with an unsafe name was almost created");
         std::terminate();
@@ -219,33 +221,89 @@ void create_table(std::string_view table_name, const std::vector<TableCreateColu
 
     // Open the file in r+w mode.
     FILE* handle = fopen(meta_path.c_str(), "r+b");
-
-    // Create a store for the physical columns, as well as extra for the internal columns.
-    std::vector<TableColumn> physical_columns(columns.size() + 1);
     
     // Add the initial column which will be the flags/metadata for the row.
-    TableColumn& preamble_column = physical_columns[0];
-    preamble_column.is_implementation = true;
+    TableCreateColumn preamble_column;
+    preamble_column.name = INTERNAL_COLUMN_IMPL_FLAGS_NAME;
     preamble_column.type = ColumnType::Byte;
-    preamble_column.name_length = strlen(INTERNAL_COLUMN_IMPL_FLAGS_NAME);
-    memcpy(preamble_column.name, INTERNAL_COLUMN_IMPL_FLAGS_NAME, preamble_column.name_length);
+    preamble_column.is_implementation = true;
+    columns.push_front(std::move(preamble_column));
 
-    // Convert the simple column definitions into actual columns.
-    for (uint32_t i = 0; i < columns.size(); i++) {
-        const TableCreateColumn& column = columns[i];
-        TableColumn& physical_column = physical_columns[i + 1];
-        physical_column.type = column.type;
-        physical_column.is_implementation = false;
+    // There is no point doing any of this if we're not allowed to add padding.
+    if (opt_allow_layout_optimization) {
+        // Create a list which holds a pointer to every column element in the linked list (for use when rearranging columns).
+        std::vector<TableCreateColumn*> column_ptrs;
+        column_ptrs.reserve(columns.size());
+        for (TableCreateColumn& c : columns) column_ptrs.push_back(&c);
 
-        // Copy over the name.
-        memcpy(physical_column.name, column.name.c_str(), column.name.length());
-        physical_column.name_length = column.name.length();
+        // First, sort the columns based on alignment requirements from smallest to largest.
+        columns.sort([](const TableCreateColumn& c1, const TableCreateColumn& c2) {
+            return column_type_alignof(c1.type) < column_type_alignof(c2.type);
+        });
+    
+        // Now, we want to rearrange any columns to fill in misaligned areas.
+        for (auto it = columns.begin(); it != columns.end(); ++it) {
+            TableCreateColumn& column = *it;
+            if (column.resolved) continue;
+            
+            // We're interested only in any types that are not naturally aligned (e.g. ColumnTypes::String).
+            // Our previous simple sorting step would've sorted out any alignment issues for naturally aligned types.
+            size_t padding_needed = column_type_sizeof(column.type) % column_type_alignof(column.type);
+            if (padding_needed == 0) continue;
+            
+            // Mark as resolved so we don't go over it again.
+            column.resolved = true;
+
+            std::vector<TableCreateColumn*> best_column_combo = algorithms::find_shortest_combination(
+                column_ptrs, (int)padding_needed,
+                [](const TableCreateColumn* c) { return c->resolved ? INT_MAX : (int)column_type_sizeof(c->type); }
+            );
+
+            for (TableCreateColumn* padding_column : best_column_combo) {
+                // We have to first "find the iterator" for the column pointer we have.
+                // There are infinitely many better and efficient ways to work around this issue (we would need our own linked list implementation, coming soon?), but for this context, it is good enough.
+                // Let's just say I would NEVER do something like this inside table scanning or frequent query logic.
+                // The standard library implementations of stuff like this are incredibly underwhelming in terms of flexibility, but anyways enough lamenting.
+                auto padding_column_it = std::find_if(columns.begin(), columns.end(), [padding_column](TableCreateColumn& c) { return padding_column == &c; });
+                if (padding_column_it == columns.end()) {
+                    logerr("Safety check fail! Could not find iterator for column when rearranging layout");
+                    exit(1);
+                }
+
+                columns.splice(std::next(it), columns, padding_column_it);
+                padding_column->resolved = true;
+            }
+        }
     }
 
-    // Now, sort the columns based on alignment requirements from smallest to largest.
-    std::sort(physical_columns.begin(), physical_columns.end(), [](const TableColumn& c1, const TableColumn& c2) {
-        return column_type_alignof(c1.type) < column_type_alignof(c2.type);
-    });
+    // Create a store for the physical columns (the stuff that will actually go to disk).
+    std::vector<TableColumn> physical_columns;
+    physical_columns.reserve(columns.size());
+
+    // Convert our linked list into an array that we can write to disk.
+    {
+        uint32_t i = 0;
+        for (TableCreateColumn& tc_column : columns) {
+            TableColumn physical_column;
+            physical_column.type = tc_column.type;
+            physical_column.is_implementation = tc_column.is_implementation;
+    
+            // Copy over the name.
+            memcpy(physical_column.name, tc_column.name.c_str(), tc_column.name.length());
+            physical_column.name_length = tc_column.name.length();
+
+            physical_columns.push_back(physical_column);
+            ++i;
+        }
+    }
+
+    // Work out the strictest alignment out of the elements.
+    // I gave up on std::max_element here.
+    size_t strictest_alignment = column_type_alignof(ColumnType::Byte);
+    for (const TableColumn& column : physical_columns) {
+        size_t column_alignment = column_type_alignof(column.type);
+        if (column_alignment > strictest_alignment) strictest_alignment = column_alignment;
+    }
 
     // Perform a final iteration to determine the buffer index and offset for each column (including any padding).
     uint32_t total_buffer_offset = 0;
@@ -253,7 +311,7 @@ void create_table(std::string_view table_name, const std::vector<TableCreateColu
         TableColumn& physical_column = physical_columns[i];
         physical_column.index = i;
 
-        if (opt_allow_padding) {
+        if (opt_allow_layout_optimization) {
             size_t column_alignment = column_type_alignof(physical_column.type);
 
             // If the column isn't aligned, we want to add padding.
@@ -269,16 +327,12 @@ void create_table(std::string_view table_name, const std::vector<TableCreateColu
         // Move the offset forwards for the next column.
         total_buffer_offset += column_type_sizeof(physical_column.type);
     }
-// steal a 4 alignment variable to pair with each string
-    if (opt_allow_padding) {
-        // Take the value with the strict alignment requirement from the columns (this will be the last entry because we've already sorted the columns!).
-        // Records are guaranteed to have at least one internal column so no boundary checks are needed.
-        size_t record_align_requirement = column_type_alignof(physical_columns.back().type);
-    
+
+    if (opt_allow_layout_optimization) {    
         // Now we want to make sure the entire record is aligned, if not we can add final padding.
-        size_t record_align_check = total_buffer_offset % record_align_requirement;
+        size_t record_align_check = total_buffer_offset % strictest_alignment;
         if (record_align_check != 0) {
-            total_buffer_offset += record_align_requirement - record_align_check;
+            total_buffer_offset += strictest_alignment - record_align_check;
         }
     }
 
@@ -290,7 +344,7 @@ void create_table(std::string_view table_name, const std::vector<TableCreateColu
     header.num_columns = physical_columns.size();
 
     // Define the header options.
-    header.options.allow_padding = opt_allow_padding;
+    header.options.allow_layout_optimization = opt_allow_layout_optimization;
 
     // Copy name.
     memcpy(header.name, table_name.data(), table_name.length());
