@@ -159,13 +159,13 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             if (!account->permissions.CREATE_TABLES) return query_error(QueryError::insufficient_privileges);
 
             // Allows the record optimizer to insert padding to prevent unaligned access.
-            bool opt_allow_padding = false;
+            bool opt_allow_layout_optimization = false;
 
             // Fetch the custom table options (if any).
             simdjson::ondemand::object options_object;
             if (d["options"].get(options_object) == simdjson::error_code::SUCCESS) {
                 if (
-                    options_object[TABLE_OPT_ALLOW_PADDING_NAME].get(opt_allow_padding) == simdjson::error_code::INCORRECT_TYPE
+                    options_object[TABLE_OPT_ALLOW_LAYOUT_OPTI_NAME].get(opt_allow_layout_optimization) == simdjson::error_code::INCORRECT_TYPE
                 ) {
                     send_query_error(socket_data, nonce, QueryError::params_invalid);
                     return;
@@ -211,7 +211,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Allocate space for the columns.
             size_t iteration = 0;
 
-            std::vector<TableCreateColumn> columns(columns_object_count);
+            std::list<TableCreateColumn> columns;
             for (auto item : columns_object) {
                 std::string_view column_name = item.unescaped_key();
                 if (!misc::column_name_string_legal(column_name)) {
@@ -235,12 +235,12 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 new_column.type = type;
                 new_column.name = std::string(column_name);
 
-                columns[iteration] = new_column;
+                columns.push_back(new_column);
                 ++iteration;
             }
 
             // Create table.
-            create_table(name, columns, opt_allow_padding);
+            create_table(name, columns, opt_allow_layout_optimization);
             
             send_query_response(socket_data, nonce);
             return;
@@ -596,7 +596,7 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             // Add the table options.
             rapidjson::Document options(&json.GetAllocator());
             options.SetObject();
-            options.AddMember(TABLE_OPT_ALLOW_PADDING_NAME, table->header.options.allow_padding, options.GetAllocator());
+            options.AddMember(TABLE_OPT_ALLOW_LAYOUT_OPTI_NAME, table->header.options.allow_layout_optimization, options.GetAllocator());
             json.AddMember("options", options, json.GetAllocator());
 
             rapidjson::Document columns(&json.GetAllocator());

@@ -141,7 +141,7 @@ int main(int argc, char** args) {
         fclose(fopen(account_bin_path.c_str(), "a"));
 
         // Create the permissions table which holds permission data on all tables.
-        std::vector<TableCreateColumn> columns {
+        std::list<TableCreateColumn> columns {
             TableCreateColumn { "index", ColumnType::Long64 },
             TableCreateColumn { "table", ColumnType::String },
             TableCreateColumn { "permissions", ColumnType::Byte }

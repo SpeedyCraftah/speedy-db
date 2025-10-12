@@ -37,7 +37,7 @@ struct TableColumn {
     uint32_t buffer_offset;
 };
 
-#define TABLE_OPT_ALLOW_PADDING_NAME "allow_record_padding"
+#define TABLE_OPT_ALLOW_LAYOUT_OPTI_NAME "allow_layout_optimization"
 struct TableHeader {
     uint32_t created_major_version; // The major version of the DB which the table was created under.
     uint32_t magic_number;
@@ -45,7 +45,7 @@ struct TableHeader {
     uint32_t num_columns;
     uint32_t record_size;
     struct {
-        bool allow_padding : 1;
+        bool allow_layout_optimization : 1;
     } options;
 };
 
