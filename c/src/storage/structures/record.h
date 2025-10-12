@@ -12,8 +12,8 @@ class Record : RecordData {
         constexpr inline Record(ActiveTable& table, RecordData* data) : table(table), data(data) {};
 
         // Returns a pointer to the impl_flags internal column data.
-        inline RecordImplFlags* get_flags() noexcept {
-            return (RecordImplFlags*)(this->data + this->table.impl_flags_column->buffer_offset);
+        inline RecordFlags* get_flags() noexcept {
+            return (RecordFlags*)(this->data + this->table.impl_flags_column->buffer_offset);
         }
 
         // Returns a numeric pointer to the column data.

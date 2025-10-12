@@ -21,6 +21,7 @@
 #include "table.h"
 #include <dirent.h>
 #include "structures/types.h"
+#include "../misc/constants.h"
 
 void send_query_response(client_socket_data* socket_data, int nonce, rapidjson::Document& data) {
     rapidjson::Document response_object;
@@ -157,6 +158,20 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
         case QueryOp::CreateTable: {
             if (!account->permissions.CREATE_TABLES) return query_error(QueryError::insufficient_privileges);
 
+            // Allows the record optimizer to insert padding to prevent unaligned access.
+            bool opt_allow_padding = false;
+
+            // Fetch the custom table options (if any).
+            simdjson::ondemand::object options_object;
+            if (d["options"].get(options_object) == simdjson::error_code::SUCCESS) {
+                if (
+                    options_object[TABLE_OPT_ALLOW_PADDING_NAME].get(opt_allow_padding) == simdjson::error_code::INCORRECT_TYPE
+                ) {
+                    send_query_error(socket_data, nonce, QueryError::params_invalid);
+                    return;
+                }
+            }
+
             std::string_view name;
             simdjson::ondemand::object columns_object;
             if (
@@ -167,20 +182,6 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             if (columns_object.is_empty()) {
                 send_query_error(socket_data, nonce, QueryError::params_invalid);
                 return;
-            }
-
-            // Allows the record optimizer to insert padding to prevent unaligned access.
-            bool opt_allow_padding = false;
-
-            // Fetch the custom table options (if any).
-            simdjson::ondemand::object options_object;
-            if (d["options"].get(options_object) == simdjson::error_code::SUCCESS) {
-                if (
-                    options_object["allow_record_padding"].get(opt_allow_padding) == simdjson::error_code::INCORRECT_TYPE
-                ) {
-                    send_query_error(socket_data, nonce, QueryError::params_invalid);
-                    return;
-                }
             }
 
             // Slow but doesn't matter in this query.
@@ -590,8 +591,15 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             json.SetObject();
             json.AddMember("name", rapidjson_string_view(table->name), json.GetAllocator());
             json.AddMember("column_count", table->column_count, json.GetAllocator());
+            json.AddMember("physical_record_size", table->header.record_size, json.GetAllocator());
 
-            rapidjson::Document columns;
+            // Add the table options.
+            rapidjson::Document options(&json.GetAllocator());
+            options.SetObject();
+            options.AddMember(TABLE_OPT_ALLOW_PADDING_NAME, table->header.options.allow_padding, options.GetAllocator());
+            json.AddMember("options", options, json.GetAllocator());
+
+            rapidjson::Document columns(&json.GetAllocator());
             columns.SetObject();
 
             // Iterate over columns.
@@ -602,17 +610,17 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 std::string_view column_name = column.name;
                 std::string_view column_type_name = column_type_to_string(column.type);
 
-                rapidjson::Document column_object;
+                rapidjson::Document column_object(&json.GetAllocator());
                 column_object.SetObject();
-                column_object.AddMember("name", rapidjson_string_view(column_name), json.GetAllocator());
-                column_object.AddMember("size", column_type_sizeof(column.type), json.GetAllocator());
-                column_object.AddMember("type", rapidjson_string_view(column_type_name), json.GetAllocator());
+                column_object.AddMember("name", rapidjson_string_view(column_name), column_object.GetAllocator());
+                column_object.AddMember("size", column_type_sizeof(column.type), column_object.GetAllocator());
+                column_object.AddMember("type", rapidjson_string_view(column_type_name), column_object.GetAllocator());
 
                 // Column index is spoofed so have to work it out here.
                 // Technically we could lie here, but we want to give the calling program an accurate idea of the table layout.
-                column_object.AddMember("physical_index", i, json.GetAllocator());
+                column_object.AddMember("physical_index", i, column_object.GetAllocator());
 
-                columns.AddMember(rapidjson_string_view(column_name), column_object, json.GetAllocator());
+                columns.AddMember(rapidjson_string_view(column_name), column_object, columns.GetAllocator());
             }
 
             json.AddMember("columns", columns, json.GetAllocator());

@@ -26,7 +26,7 @@
 #include <vector>
 
 // Global variable holding the socket ID.
-int server_socket_id;
+int server_socket_id = -1;
 int connections_size = 0;
 std::unordered_map<int, client_socket_data*> socket_connections;
 std::unordered_map<std::string, ActiveTable*, MapStringViewHash, MapStringViewEqual> open_tables;
@@ -34,8 +34,6 @@ std::unordered_map<std::string, DatabaseAccount*, MapStringViewHash, MapStringVi
 FILE* database_accounts_handle = nullptr;
 
 // Default server options and attributes.
-int server_config::version::major = 10;
-int server_config::version::minor = 0;
 int server_config::port = 4546;
 bool server_config::force_encrypted_traffic = false;
 bool server_config::root_account_enabled = false;
@@ -45,10 +43,10 @@ std::string server_config::data_directory = "./data/";
 
 void on_terminate() {
     log("Killing socket and exiting");
-    close(server_socket_id);
+    if (server_socket_id != -1) close(server_socket_id);
 
     // Close all file handles and finalise table operations.
-    fclose(database_accounts_handle);
+    if (database_accounts_handle != nullptr) fclose(database_accounts_handle);
     for (auto t : open_tables) {
         delete t.second;
     }
@@ -150,7 +148,8 @@ int main(int argc, char** args) {
         };
 
         // Create account table permissions table.
-        create_table("--internal-table-permissions", columns);
+        // We're not expecting to store much in these so won't waste much space with padding.
+        create_table("--internal-table-permissions", columns, true);
     }
 
     // Register exit handler.

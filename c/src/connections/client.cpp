@@ -243,7 +243,7 @@ void* client_connection_handle(void* arg) {
         int64_t version_major = version_object["major"];
         int64_t version_minor = version_object["minor"];
 
-        if (version_major > server_config::version::major) {
+        if (version_major > DB_MAJOR_VERSION) {
             logerr("Socket with handle %d has been terminated due to having an unsupported version.", socket_id);
 
             rapidjson::Document object;
@@ -259,7 +259,7 @@ void* client_connection_handle(void* arg) {
             send_json_handshake(socket_data, object);
 
             goto break_socket;
-        } else if (version_major < server_config::version::major) {
+        } else if (version_major < DB_MAJOR_VERSION) {
             logerr("Socket with handle %d has been terminated due to having an unsupported version.", socket_id);
 
             rapidjson::Document object;
@@ -331,8 +331,8 @@ void* client_connection_handle(void* arg) {
         // Send back handshake success.
         rapidjson::Document version_server_object(&handshake_object.GetAllocator());
         version_server_object.SetObject();
-        version_server_object.AddMember("major", server_config::version::major, handshake_object.GetAllocator());
-        version_server_object.AddMember("minor", server_config::version::minor, handshake_object.GetAllocator());
+        version_server_object.AddMember("major", DB_MAJOR_VERSION, handshake_object.GetAllocator());
+        version_server_object.AddMember("minor", DB_MINOR_VERSION, handshake_object.GetAllocator());
         handshake_object.AddMember("version", version_server_object, handshake_object.GetAllocator());
 
         send_json_handshake(socket_data, handshake_object);

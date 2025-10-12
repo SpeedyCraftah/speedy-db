@@ -14,9 +14,9 @@ enum ColumnType : uint32_t {
 // The record preamble holding useful flags for each record.
 #define INTERNAL_COLUMN_IMPL_FLAGS_NAME "impl_flags"
 typedef uint8_t RecordImplFlags;
-enum RecordFlags : RecordImplFlags {
-    Active = 1 // Determines whether this block holds an active record.
-};
+struct RecordFlags {
+    bool active : 1; // Determines whether this block holds an active record.
+} __attribute__((packed));
 
 // A dummy type to clearly identify memory that refers to a record.
 struct RecordData {} __attribute__((packed));
@@ -37,11 +37,16 @@ struct TableColumn {
     uint32_t buffer_offset;
 };
 
+#define TABLE_OPT_ALLOW_PADDING_NAME "allow_record_padding"
 struct TableHeader {
+    uint32_t created_major_version; // The major version of the DB which the table was created under.
     uint32_t magic_number;
     char name[33] = {0};
     uint32_t num_columns;
     uint32_t record_size;
+    struct {
+        bool allow_padding : 1;
+    } options;
 };
 
 // This does not require padding as:
