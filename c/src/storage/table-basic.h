@@ -37,7 +37,7 @@ struct TableColumn {
     uint32_t buffer_offset;
 };
 
-#define TABLE_OPT_ALLOW_LAYOUT_OPTI_NAME "allow_layout_optimization"
+#define TABLE_OPT_ALLOW_LAYOUT_OPTI_NAME "allow_layout_optimizer"
 struct TableHeader {
     uint32_t created_major_version; // The major version of the DB which the table was created under.
     uint32_t magic_number;
