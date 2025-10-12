@@ -112,7 +112,7 @@ types["string"] = { size: 20, alignment: 8, name: "string", accessPatterns: [typ
  * Sample data structure layout to analyze
  * Contains a mix of different data types to demonstrate alignment and padding effects
  */
-let columns = JSON.parse(JSON.stringify([types.byte, types.byte, types.byte, types.byte, types.byte, types.string, types.float, types.long, types.string, types.float, types.long, types.string, types.float, types.long, types.string, types.float, types.long, types.string, types.float, types.long]));
+let columns = JSON.parse(JSON.stringify([types.byte, types.byte, types.byte, types.byte, types.byte, types.string, types.long, types.string, types.long, types.string, types.float, types.long, types.string, types.float, types.long, types.string, types.float, types.long]));
 printRecord("original", columns, 4096);
 
 let originalPaddingNeeded = 0;
@@ -149,7 +149,7 @@ for (const column of columns) {
 run1PaddingNeeded += statsOffset % Math.max(...columns.map(c => c.alignment)) !== 0 ? Math.max(...columns.map(c => c.alignment)) - (statsOffset % Math.max(...columns.map(c => c.alignment))) : 0;
 
 // At this point we don't need to worry about naturally aligned types being misaligned since those can be resolved with just a bit of padding, but we are very worried about misaligned types (e.g. string).
-for (let i = columns.length - 1; i >= 0; --i) {
+for (let i = 0; i < columns.length; i++) {
     const column = columns[i];
     const paddingNeeded = column.size % column.alignment;
     if (column.resolved || paddingNeeded === 0) continue;
@@ -164,7 +164,7 @@ for (let i = columns.length - 1; i >= 0; --i) {
     }
 
     column.resolved = true;
-    i = columns.length - 1;
+    i = 0;
 }
 
 let run2PaddingNeeded = 0;
