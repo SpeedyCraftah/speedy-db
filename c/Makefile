@@ -16,6 +16,10 @@ all: debug
 debug: CXXFLAGS = $(FLAGS) -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1 -Wall
 debug: $(BIN_DIR)/debug
 
+# For the build tester
+debug-norun: CXXFLAGS = $(FLAGS) -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1 -Wall
+debug-norun: $(BIN_DIR)/debug-norun
+
 production: CXXFLAGS = $(FLAGS) -Wall -Ofast -march=native -ffat-lto-objects -flto -fuse-linker-plugin
 production: $(BIN_DIR)/production
 
@@ -24,6 +28,10 @@ $(BIN_DIR)/debug: $(OBJ_FILES)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ_FILES) -lcrypto
 	$(BIN_DIR)/debug enable-root-account
+
+$(BIN_DIR)/debug-norun: $(OBJ_FILES)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJ_FILES) -lcrypto
 
 $(BIN_DIR)/production: $(OBJ_FILES)
 	@mkdir -p $(BIN_DIR)
@@ -36,10 +44,10 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 # Cleaning
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR)/debug $(BIN_DIR)/production
+	rm -rf $(BUILD_DIR) $(BIN_DIR)/debug $(BIN_DIR)/production $(BIN_DIR)/debug-norun
 
 clean-bin:
-	rm -rf $(BIN_DIR)/debug $(BIN_DIR)/production
+	rm -rf $(BIN_DIR)/debug $(BIN_DIR)/production $(BIN_DIR)/debug-norun
 
 # Misc
 kill:
