@@ -10,4 +10,4 @@ jobs:
         - name: Check out database repository code
           uses: actions/checkout@v4
         - name: Compile database debug build
-          run: make -C c debug -j$(nproc)
+          run: make -C c debug
