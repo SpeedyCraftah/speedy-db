@@ -1,0 +1,13 @@
+on:
+  push:
+    paths:
+      - "c/**"
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    steps:
+        - name: Check out database repository code
+          uses: actions/checkout@v4
+        - name: Compile database debug build
+          run: make -C c debug -j$(nproc)
