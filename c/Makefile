@@ -28,7 +28,7 @@ $(BIN_DIR)/debug: $(OBJ_FILES)
 $(BIN_DIR)/production: $(OBJ_FILES)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ_FILES) -lcrypto
-
+	
 # Compiling
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)
