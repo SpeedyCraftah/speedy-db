@@ -13,7 +13,7 @@ FLAGS = -std=c++20 -pthread -DRAPIDJSON_HAS_STDSTRING=1
 
 all: debug
 
-debug: CXXFLAGS = $(FLAGS) -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1 -Wall
+debug: CXXFLAGS = $(FLAGS) -g -O0 -DSIMDJSON_DEVELOPMENT_CHECKS=1 -Wall 
 debug: $(BIN_DIR)/debug
 
 # For the build tester
