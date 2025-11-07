@@ -2,9 +2,11 @@ on:
   push:
     paths:
       - "c/**"
+      - ".gitea/workflows/db-build.yaml"
   pull_request:
     paths:
       - "c/**"
+      - ".gitea/workflows/db-build.yaml"
 
 jobs:
   Build:
