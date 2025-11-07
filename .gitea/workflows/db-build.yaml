@@ -2,6 +2,9 @@ on:
   push:
     paths:
       - "c/**"
+  pull_request:
+    paths:
+      - "c/**"
 
 jobs:
   Build:
