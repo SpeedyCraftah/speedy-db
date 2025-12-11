@@ -173,7 +173,7 @@ export default class SpeedDBClient extends EventEmitter {
         data["n"] = nonce;
 
         if (this.queryLoggerStream) {
-            this.queryLoggerStream.write(`[${operationMap[data.o]}] ` + JSON.stringify(data).replace(/{/g,'{ ').replace(/}/g,' }').replace(/:/g,': ').replace(/,/g,', ') + "\n");
+            this.queryLoggerStream.write(`[${operationMap[data.o]}] ` + JSON.stringify(data, (k, v) => this.convertUndefinedValueToNull && v === undefined ? null : v).replace(/{/g,'{ ').replace(/}/g,' }').replace(/:/g,': ').replace(/,/g,', ') + "\n");
         }
 
         return new Promise(async (resolve, reject) => {
