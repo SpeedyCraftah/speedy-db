@@ -443,7 +443,7 @@ void* client_connection_handle(void* arg) {
                 // Send a regular message here as it is the extended handshake.
                 send_json(socket_data, object);
                 
-                free(auth_handshake_buffer);
+                if (socket_data->encryption.enabled) free(auth_handshake_buffer);
                 goto break_socket;
             }
 
@@ -466,7 +466,7 @@ void* client_connection_handle(void* arg) {
 
                 send_json(socket_data, object);
                 
-                free(auth_handshake_buffer);
+                if (socket_data->encryption.enabled) free(auth_handshake_buffer);
                 goto break_socket;
             }
 
