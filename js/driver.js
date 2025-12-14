@@ -1,9 +1,10 @@
-const util = require("util");
-const Net = require("net");
-const EventEmitter = require("events");
+import util from "util";
+import Net from "net";
+import EventEmitter from "events";
+import crypto from "crypto";
+import fs from "fs";
+
 const sleepAsync = util.promisify(setTimeout);
-const crypto = require("crypto");
-const fs = require("fs");
 
 function randomInt(min, max) {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -13,8 +14,8 @@ const AES_IV_SIZE = 16;
 const keepAlivePacket = new Uint8Array([0, 0, 0, 0]);
 const operationMap = { 0: "TableCreate", 1: "Open", 2: "Describe", 3: "Insert", 4: "FindOne", 5: "FindMany", 6: "EraseMany", 7: "UpdateMany", 8: "Close", 9: "Rebuild", 10: "AccountCreate", 11: "AccountDelete", 12: "TableSetPermissions", 13: "TableGetPermissions", 14: "GetAllTableNames", 15: "GetAllAccountNames", 16: "AccountGetPermissions", 17: "NoOperation" };
 
-module.exports = class SpeedDBClient extends EventEmitter {
-    constructor(config = { socket: { ip: "127.0.0.1", port: 4546 }, auth: {}, cipher: "", queryLogger: false }) {
+export default class SpeedDBClient extends EventEmitter {
+    constructor(config = { socket: { ip: "127.0.0.1", port: 4546 }, auth: {}, cipher: "", queryLogger: false, convertUndefinedValueToNull: true }) {
         if (!config.socket) config.socket = { ip: "127.0.0.1", port: 4546 };
 
         super();
@@ -24,6 +25,11 @@ module.exports = class SpeedDBClient extends EventEmitter {
         this.auth = config.auth;
         this.serverVersion = { minor: 0, major: 0 };
         this.activeQueries = {};
+
+        // Whether to convert object values from undefined to null when converting the query to a packet.
+        // Setting a value as undefined in JS removes it completely when stringifying which can be very dangerous if the programmer isn't aware of this or makes a mistake.
+        // This could otherwise result in a safety check condition being omitted completely instead of safely failing when being parsed as a null.
+        this.convertUndefinedValueToNull = config.convertUndefinedValueToNull;
 
         this.buffer = null;
         this.bufferPosition = 0;
@@ -122,7 +128,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
                 return this._send_query({ o: 8, d: { table: name } });
             },
 
-            rebuild: (data) => {
+            rebuild: () => {
                 return this._send_query({ o: 9, d: { table: name } });
             },
 
@@ -137,7 +143,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
     }
 
     _compose_packet(data) {
-        let d = Buffer.from(JSON.stringify(data));
+        let d = Buffer.from(this.convertUndefinedValueToNull ? JSON.stringify(data, (k, v) => v === undefined ? null : v) : JSON.stringify(data));
 
         if (this.encrypted) {
             // Encrypt the data before sending.
@@ -167,7 +173,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
         data["n"] = nonce;
 
         if (this.queryLoggerStream) {
-            this.queryLoggerStream.write(`[${operationMap[data.o]}] ` + JSON.stringify(data).replace(/{/g,'{ ').replace(/}/g,' }').replace(/:/g,': ').replace(/,/g,', ') + "\n");
+            this.queryLoggerStream.write(`[${operationMap[data.o]}] ` + JSON.stringify(data, (k, v) => this.convertUndefinedValueToNull && v === undefined ? null : v).replace(/{/g,'{ ').replace(/}/g,' }').replace(/:/g,': ').replace(/,/g,', ') + "\n");
         }
 
         return new Promise(async (resolve, reject) => {
@@ -314,7 +320,7 @@ module.exports = class SpeedDBClient extends EventEmitter {
 
                 // Send handshake.
                 let handshakeData = {
-                    version: { major: 9, minor: 0 },
+                    version: { major: 11, minor: 0 },
                     options: { error_text: true }
                 };
 

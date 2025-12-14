@@ -4,16 +4,17 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
-#include "table-reusable-types.h"
 #include "../structures/fast_variant.h"
 #include "../structures/no_copy.h"
 #include "../structures/short_store.h"
+#include "./structures/types.h"
+#include "table-basic.h"
 
 /* WARNING: UNDER NO CIRCUMSTANCES SHOULD THE STRUCTURES HERE BE RE-USED AFTER PROCESSING OF THE CURRENT QUERY */
 /* STRINGS HERE REFERENCE THE QUERY-PROVIDED STRING BUFFERS WHICH BECOME INVALID AFTER THE QUERY FINISHES! */
 
 namespace query_compiler {
-    enum where_compare_op : uint8_t {
+    enum WhereCompareOp : uint8_t {
         STRING_EQUAL,
         NUMERIC_EQUAL,
         NUMERIC_GREATER_THAN,
@@ -25,7 +26,7 @@ namespace query_compiler {
         STRING_IN_LIST
     };
 
-    enum update_changes_op : uint8_t {
+    enum UpdateChangesOp : uint8_t {
         STRING_SET,
         NUMERIC_SET
     };
@@ -39,7 +40,7 @@ namespace query_compiler {
     
         // Used for signed/float comparisons as well, excluding LG/LT.
         struct Numeric : NoCopy {
-            NumericType comparator;
+            NumericColumnData comparator;
         };
 
         struct NumericInList : NoCopy {
@@ -59,8 +60,8 @@ namespace query_compiler {
             StringInList
         >;
 
-        where_compare_op op;
-        uint32_t column_index;
+        WhereCompareOp op;
+        TableColumn* column;
         bool negated;
 
         ComparatorInfo info;
@@ -68,14 +69,14 @@ namespace query_compiler {
 
     struct UpdateSet {
         struct Numeric : NoCopy {
-            update_changes_op op;
-            uint32_t column_index;
+            UpdateChangesOp op;
+            TableColumn* column;
     
-            NumericType new_value;
+            NumericColumnData new_value;
         };
     
         struct String : NoCopy {
-            update_changes_op op;
+            UpdateChangesOp op;
             uint32_t column_index;
     
             std::string_view new_value;
@@ -87,15 +88,15 @@ namespace query_compiler {
             Numeric
         >;
 
-        update_changes_op op;
-        uint32_t column_index;
+        UpdateChangesOp op;
+        TableColumn* column;
 
         UpdateInfo info;
     };
     
     struct InsertColumn {
         struct Numeric : NoCopy {
-            NumericType data;
+            NumericColumnData data;
         };
     
         struct String : NoCopy {

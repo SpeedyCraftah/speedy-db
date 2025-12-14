@@ -58,7 +58,7 @@ struct client_socket_data {
     rapidjson::Document object;
 };
 
-enum query_error {
+enum QueryError {
     json_invalid,
     packet_size_exceeded,
     overflow_protection_triggered,

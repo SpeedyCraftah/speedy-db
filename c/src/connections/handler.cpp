@@ -70,9 +70,13 @@ void accept_connections() {
         int thread_status = pthread_create(&socket_data->thread_id, NULL, client_connection_handle, socket_data);
         if (thread_status != 0) {
             logerr("Failed to create thread for connection with socket handle %d (errno %d), hence it has been refused", client_id, thread_status);
-            socket_connections.erase(client_id);
+
+            auto socket_connections = socket_connections_guard.lock();
+            
+            socket_connections->erase(client_id);
             delete socket_data;
             close(client_id);
+            
             continue;
         }
 
