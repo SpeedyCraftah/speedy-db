@@ -301,7 +301,10 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
                 else if (key == "UPDATE_ACCOUNTS") permissions.UPDATE_ACCOUNTS = value;
                 else if (key == "DELETE_ACCOUNTS") permissions.DELETE_ACCOUNTS = value;
                 else if (key == "TABLE_ADMINISTRATOR") permissions.TABLE_ADMINISTRATOR = value;
-                else throw QueryError::params_invalid;                
+                else {
+                    send_query_error(socket_data, nonce, QueryError::params_invalid);
+                    return;
+                }   
             }
 
             accounts_mutex.lock();
