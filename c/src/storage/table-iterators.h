@@ -43,6 +43,7 @@ namespace table_iterator {
                     iterator operator++() {
                         buffer_index++;
             
+                        // If we need to get more entries (don't read if the last read was partial).
                         if (buffer_index >= buffer_records_available && buffer_records_available == BULK_HEADER_READ_COUNT) {
                             buffer_index = 0;
                             buffer_records_available = request_bulk_records();
@@ -102,8 +103,7 @@ namespace table_iterator {
                     inline iterator(ActiveTable& tbl, query_compiler::CompiledFindQuery* q) : query(q), table(tbl), d_iterator(iterate_all(table).begin()), current_record(d_iterator.get_raw_record()) {}
             
                     iterator operator++() {
-                        while (!this->d_iterator.complete) {
-                            ++this->d_iterator;
+                        while (++this->d_iterator, !this->d_iterator.complete) {
                             RecordData* record = this->d_iterator.get_raw_record();
 
                             // If the record is inactive, skip it.
