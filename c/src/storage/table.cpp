@@ -35,6 +35,9 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
     std::string dynamic_path = path + "/dynamic.bin";
 
     // Open the files in r+w mode.
+    // NOTE: For now, this is open in buffering mode where writes will (attempt) to be buffered internally by the C library.
+    // This is enabled for now as it enables faster inserts at the cost of potential data loss on sudden system poweroff.
+    // Until we implement ACID compliance this is okay :).
     FILE* header_handle = fopen(meta_path.c_str(), "r+b");
     fseek(header_handle, 0, SEEK_SET);
 
