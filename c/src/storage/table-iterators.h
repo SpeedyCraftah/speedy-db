@@ -43,7 +43,7 @@ namespace table_iterator {
                     iterator operator++() {
                         buffer_index++;
             
-                        if (buffer_index >= buffer_records_available) {
+                        if (buffer_index >= buffer_records_available && buffer_records_available == BULK_HEADER_READ_COUNT) {
                             buffer_index = 0;
                             buffer_records_available = request_bulk_records();
                         }
@@ -127,7 +127,7 @@ namespace table_iterator {
 
             inline iterator begin() {
                 iterator i = iterator(table, query);
-                if (!i.d_iterator.complete && !table.verify_record_conditions_match(i.current_record, query->conditions, query->conditions_count)) i.operator++();
+                if (!i.d_iterator.complete && (!Record(table, i.current_record).get_flags()->active || !table.verify_record_conditions_match(i.current_record, query->conditions, query->conditions_count))) i.operator++();
                 
                 return i;
             }
