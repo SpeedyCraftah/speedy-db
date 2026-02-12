@@ -1,10 +1,8 @@
 #include "query-compiler.h"
 #include "compiled-query.h"
-#include "structures/types.h"
 #include "table.h"
 #include <memory>
 #include <string_view>
-#include <exception>
 #include "../deps/xxh/xxhash.h"
 #include "../misc/constants.h"
 #include "../deps/simdjson/simdjson.h"
@@ -247,8 +245,18 @@ namespace query_compiler {
         // Check for record offset.
         if (query_object["offset"].get(compiled_query->offset) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
+        // Check for any sorting preferences.
+        int8_t sorting_preference;
+        simdjson::error_code sorting_preference_result = query_object["sort"].get(sorting_preference);
+        if (sorting_preference_result == simdjson::error_code::SUCCESS) {
+            if (sorting_preference > 1 || sorting_preference < -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
+            compiled_query->result_sort = (ResultSortMode)sorting_preference;
+        } else if (sorting_preference_result == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
+        // Check for any return columns.
         simdjson::ondemand::array return_columns;
-        if (query_object["return"].get(return_columns) == simdjson::error_code::SUCCESS) {
+        simdjson::error_code return_columns_result = query_object["return"].get(return_columns);
+        if (return_columns_result == simdjson::error_code::SUCCESS) {
             // Return no columns by default.
             size_t filtered_columns = 0;
 
@@ -262,7 +270,7 @@ namespace query_compiler {
             }
 
             compiled_query->columns_returned = filtered_columns;
-        }
+        } else if (return_columns_result == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
         return compiled_query.release();
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <stdint.h>
 #include <string_view>
 #include <unordered_map>
@@ -29,6 +30,12 @@ namespace query_compiler {
     enum UpdateChangesOp : uint8_t {
         STRING_SET,
         NUMERIC_SET
+    };
+
+    enum ResultSortMode : int8_t {
+        NONE = 0,
+        ASCENDING = 1,
+        DESCENDING = -1
     };
 
     
@@ -122,6 +129,8 @@ namespace query_compiler {
         size_t limit = 0;
         size_t offset = 0;
         size_t columns_returned = SIZE_MAX;
+        
+        ResultSortMode result_sort = ResultSortMode::NONE;
 
         ~CompiledFindQuery() {
             if (!is_static_alloc && conditions != nullptr) delete[] conditions;
