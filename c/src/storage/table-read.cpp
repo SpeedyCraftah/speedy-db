@@ -246,23 +246,17 @@ bool ActiveTable::find_one_record(query_compiler::CompiledFindQuery* query, rapi
     this->op_mutex.lock();
 
     size_t offset_counter = query->offset;
-    for (Record record : table_iterator::iterate_all(*this)) {
-        // If the block is empty, skip to the next one.
-        if (!record.get_flags()->active) continue;
-
-        // Check if record matches conditions.
-        if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
-            // Ignore matched records until offset runs out.
-            if (offset_counter != 0) {
-                --offset_counter;
-                continue;
-            }
-
-            assemble_record_data_to_json((RecordData*)record, query->columns_returned, result);
-
-            this->op_mutex.unlock();
-            return true;
+    for (Record record : table_iterator::iterate_specific(*this, query)) {
+        // Ignore matched records until offset runs out.
+        if (offset_counter != 0) {
+            --offset_counter;
+            continue;
         }
+
+        assemble_record_data_to_json((RecordData*)record, query->columns_returned, result);
+
+        this->op_mutex.unlock();
+        return true;
     }
 
     this->op_mutex.unlock();
@@ -274,24 +268,18 @@ void ActiveTable::find_many_records(query_compiler::CompiledFindQuery* query, ra
     result.SetArray();
 
     size_t offset_counter = query->offset;
-    for (Record record : table_iterator::iterate_all(*this)) {
-        // If the block is empty, skip to the next one.
-        if (!record.get_flags()->active) continue;
-
-        // Check if record matches conditions.
-        if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
-            // Ignore matched records until offset runs out.
-            if (offset_counter != 0) {
-                --offset_counter;
-                continue;
-            }
-
-            rapidjson::Document record_object(&result.GetAllocator());
-            assemble_record_data_to_json((RecordData*)record, query->columns_returned, record_object);
-
-            result.PushBack(record_object, result.GetAllocator());
-            if (query->limit != 0 && result.Size() == query->limit) break;
+    for (Record record : table_iterator::iterate_specific(*this, query)) {
+        // Ignore matched records until offset runs out.
+        if (offset_counter != 0) {
+            --offset_counter;
+            continue;
         }
+
+        rapidjson::Document record_object(&result.GetAllocator());
+        assemble_record_data_to_json((RecordData*)record, query->columns_returned, record_object);
+
+        result.PushBack(record_object, result.GetAllocator());
+        if (query->limit != 0 && result.Size() == query->limit) break;
     }
 
     this->op_mutex.unlock();
