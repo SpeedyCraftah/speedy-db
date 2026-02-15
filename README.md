@@ -128,7 +128,7 @@ const richestUsers = await db.table("users").findMany({
   // Sort the results by balance in descending order (1 = ascending, -1 = descending).
   // The deprecated findOne query also supports this operation, albeit the database engine internally uses findMany with a limit of 1.
   sort: { column: "balance", order: -1 }
-}); // [{ name: "rick", balance: 238.0 }, { name: "henry", balance: 21.83 }, ...]
+}); // [{ name: "rick", balance: 238.0, age: .., favourite_number: .. }, { name: "henry", balance: 21.83, age: .., favourite_number: .. }, ...]
 
 // More examples coming soon!
 ```
