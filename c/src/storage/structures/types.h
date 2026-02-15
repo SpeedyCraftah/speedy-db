@@ -41,3 +41,12 @@ constexpr size_t column_type_sizeof(ColumnType type) {
     else if (type == ColumnType::Long64) return sizeof(long);
     __builtin_unreachable();
 }
+
+constexpr bool column_type_is_numeric(ColumnType type) {
+    if (type == ColumnType::Integer) return true;
+    else if (type == ColumnType::Byte) return true;
+    else if (type == ColumnType::Float32) return true;
+    else if (type == ColumnType::Long64) return true;
+    else if (type == ColumnType::String) return false;
+    __builtin_unreachable();
+}
