@@ -23,7 +23,7 @@ namespace query_compiler {
         "Your query contains duplicates of the same column which is not allowed for this query.",
         "Your query does not contain all of the table columns which is required for this query.",
         "A column that has been specified for results sorting does not exist.",
-        "Sorting columns can only be of a numeric type."
+        "A results sorting column can only be of a numeric type."
     };
 
     NumericColumnData parse_numeric_sj_value(ColumnType column_type, simdjson::ondemand::value& value) {

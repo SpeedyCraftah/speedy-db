@@ -19,7 +19,8 @@ namespace query_compiler {
         INVALID_OPTION_SETTING,
         DUPLICATE_COLUMNS,
         UNSPECIFIED_COLUMNS,
-        SORT_COLUMN_NOT_FOUND
+        SORT_COLUMN_NOT_FOUND,
+        SORT_COLUMN_NOT_NUMERIC
     };
 
     extern const rapidjson::GenericStringRef<char> error_text[];
