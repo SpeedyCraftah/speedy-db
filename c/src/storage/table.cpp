@@ -136,8 +136,8 @@ ActiveTable::ActiveTable(std::string_view table_name, bool is_internal = false) 
         TableColumn* permissions_column = permissions_table->columns["permissions"];
         TableColumn* index_column = permissions_table->columns["index"];
         for (Record record : table_iterator::iterate_specific(*permissions_table, query.build())) {
-            uint8_t permissions = record.get_numeric(permissions_column)->byte;
-            long index = record.get_numeric(index_column)->long64;
+            uint8_t permissions = record.get_numeric_raw(permissions_column)->byte;
+            long index = record.get_numeric_raw(index_column)->long64;
 
             // Safety check to see if a permission entry already exists for this user, and a duplicate was found.
             // This COULD be a debug-only check, but loading tables is rare so the added safety benefit is worth the slight performance cost.
