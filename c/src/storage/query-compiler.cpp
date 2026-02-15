@@ -23,6 +23,7 @@ namespace query_compiler {
         "Your query contains duplicates of the same column which is not allowed for this query.",
         "Your query does not contain all of the table columns which is required for this query.",
         "A column that has been specified for results sorting does not exist.",
+        "Sorting columns can only be of a numeric type."
     };
 
     NumericColumnData parse_numeric_sj_value(ColumnType column_type, simdjson::ondemand::value& value) {
@@ -259,11 +260,11 @@ namespace query_compiler {
             // Get the column to use as a key.
             std::string_view column_name = sort_options["column"];
             auto column_find = table->columns.find(column_name);
-            if (column_find == table->columns.end()) throw query_compiler::exception(error::COLUMN_NOT_FOUND);
+            if (column_find == table->columns.end()) throw query_compiler::exception(error::SORT_COLUMN_NOT_FOUND);
             compiled_query->result_sort_column = column_find->second;
 
             // At the moment only numeric columns are supported.
-            if (!column_type_is_numeric(column_find->second->type)) throw query_compiler::exception(error::SORT_COLUMN_NOT_FOUND);
+            if (!column_type_is_numeric(column_find->second->type)) throw query_compiler::exception(error::SORT_COLUMN_NOT_NUMERIC);
         } else if (sort_options_result == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
         // Check for any return columns.
