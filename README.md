@@ -113,12 +113,22 @@ const users = await db.table("users").findMany({
         favourite_number: { "in": [21, 52, 91, 100] }
     },
     // Return only the name and balance of records - remove for all.
-    return: ['name', 'balance'],
+    return: ["name", "balance"],
     // Only return the first 5 records that match the criteria - remove for no limit.
     limit: 5,
     // Skip 1 matched record before beginning to return records (does not count towards limit).
     offset: 1
-}); // [{ name: "henry", balance: 21.83 }, { name: "henry", balance: 238.0 }, ...]
+}); // [{ name: "henry", balance: 21.83 }, { name: "rick", balance: 238.0 }, ...]
+
+const richestUsers = await db.table("users").findMany({
+  // Not looking for any specific user - no conditions.
+  where: {},
+  // Only return the top 10 richest users.
+  limit: 10,
+  // Sort the results by balance in descending order (1 = ascending, -1 = descending).
+  // The deprecated findOne query also supports this operation, albeit the database engine internally uses findMany with a limit of 1.
+  sort: { column: "balance", order: -1 }
+}); // [{ name: "rick", balance: 238.0 }, { name: "henry", balance: 21.83 }, ...]
 
 // More examples coming soon!
 ```
