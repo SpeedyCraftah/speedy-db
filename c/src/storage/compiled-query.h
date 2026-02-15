@@ -131,6 +131,7 @@ namespace query_compiler {
         size_t columns_returned = SIZE_MAX;
         
         ResultSortMode result_sort = ResultSortMode::NONE;
+        TableColumn* result_sort_column = nullptr;
 
         ~CompiledFindQuery() {
             if (!is_static_alloc && conditions != nullptr) delete[] conditions;
