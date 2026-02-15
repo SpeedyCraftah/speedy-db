@@ -1,10 +1,9 @@
 #include "query-compiler.h"
 #include "compiled-query.h"
-#include "structures/types.h"
+#include "table-basic.h"
 #include "table.h"
 #include <memory>
 #include <string_view>
-#include <exception>
 #include "../deps/xxh/xxhash.h"
 #include "../misc/constants.h"
 #include "../deps/simdjson/simdjson.h"
@@ -22,7 +21,9 @@ namespace query_compiler {
         "The advanced condition specified does not exist or appear to be supported.",
         "The option specified for a setting does not fit the acceptable parameters.",
         "Your query contains duplicates of the same column which is not allowed for this query.",
-        "Your query does not contain all of the table columns which is required for this query."
+        "Your query does not contain all of the table columns which is required for this query.",
+        "A column that has been specified for results sorting does not exist.",
+        "A results sorting column can only be of a numeric type."
     };
 
     NumericColumnData parse_numeric_sj_value(ColumnType column_type, simdjson::ondemand::value& value) {
@@ -247,8 +248,29 @@ namespace query_compiler {
         // Check for record offset.
         if (query_object["offset"].get(compiled_query->offset) == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
+        // Check for any sorting preferences.
+        simdjson::ondemand::object sort_options;
+        simdjson::error_code sort_options_result = query_object["sort"].get(sort_options);
+        if (sort_options_result == simdjson::error_code::SUCCESS) {
+            // Get the direction of the sort.
+            int8_t direction = sort_options["order"].get_int64();
+            if (direction != 1 && direction != -1) throw query_compiler::exception(error::INVALID_OPTION_SETTING);
+            compiled_query->result_sort = (ResultSortMode)direction;
+            
+            // Get the column to use as a key.
+            std::string_view column_name = sort_options["column"];
+            auto column_find = table->columns.find(column_name);
+            if (column_find == table->columns.end()) throw query_compiler::exception(error::SORT_COLUMN_NOT_FOUND);
+            compiled_query->result_sort_column = column_find->second;
+
+            // At the moment only numeric columns are supported.
+            if (!column_type_is_numeric(column_find->second->type)) throw query_compiler::exception(error::SORT_COLUMN_NOT_NUMERIC);
+        } else if (sort_options_result == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
+
+        // Check for any return columns.
         simdjson::ondemand::array return_columns;
-        if (query_object["return"].get(return_columns) == simdjson::error_code::SUCCESS) {
+        simdjson::error_code return_columns_result = query_object["return"].get(return_columns);
+        if (return_columns_result == simdjson::error_code::SUCCESS) {
             // Return no columns by default.
             size_t filtered_columns = 0;
 
@@ -262,7 +284,7 @@ namespace query_compiler {
             }
 
             compiled_query->columns_returned = filtered_columns;
-        }
+        } else if (return_columns_result == simdjson::error_code::INCORRECT_TYPE) throw simdjson::simdjson_error(simdjson::error_code::INCORRECT_TYPE);
 
         return compiled_query.release();
     }

@@ -673,10 +673,20 @@ void process_query(client_socket_data* socket_data, uint nonce, simdjson::ondema
             }
 
             query_compiler::CompiledFindQuery* query = query_compiler::compile_find_query(table, d);
-
             rapidjson::Document result;
-            bool found = table->find_one_record(query, result);
-            if (!found) result.SetNull();
+
+            // If this query requests a sort, just use find_many_records under the hood which unlike find_one_record, supports sorting.
+            // find_one_record will be deprecated soon in favour of a single find driver function with optimisation for single object returns.
+            if (query->result_sort != query_compiler::ResultSortMode::NONE) {
+                query->limit = 1;
+                table->find_many_records(query, result);
+
+                if (result.Empty()) result.SetNull();
+                else result.Swap(result[0]);
+            } else {
+                bool found = table->find_one_record(query, result);
+                if (!found) result.SetNull();
+            }
 
             send_query_response(socket_data, nonce, result);
 

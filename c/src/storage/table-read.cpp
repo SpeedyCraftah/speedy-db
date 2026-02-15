@@ -1,6 +1,10 @@
 #include "compiled-query.h"
+#include "structures/record.h"
 #include "table-basic.h"
 #include "table.h"
+#include <exception>
+#include <iterator>
+#include <memory>
 #include <string_view>
 #include "table-iterators.h"
 
@@ -18,93 +22,49 @@ bool ActiveTable::verify_record_conditions_match(RecordData* record_data, query_
         switch (generic_cmp.op) {
             case query_compiler::WhereCompareOp::NUMERIC_EQUAL: {
                 query_compiler::QueryComparator::Numeric& cmp = generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
-                NumericColumnData* data = record.get_numeric(generic_cmp.column);
+                NumericColumn numeric = record.get_numeric(generic_cmp.column);
                 
-                switch (generic_cmp.column->type) {
-                    case ColumnType::Byte: if ((cmp.comparator.byte != data->byte) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Long64: if ((cmp.comparator.long64 != data->long64) ^ generic_cmp.negated) return false; break;
-
-                    // Guaranteed to be 4 bytes in length.
-                    default: if ((cmp.comparator.unsigned32_raw != data->unsigned32_raw) ^ generic_cmp.negated) return false; break;
-                }
-
+                if (!numeric.cmp_eq(cmp) ^ generic_cmp.negated) return false;
                 break;
             }
 
             case query_compiler::WhereCompareOp::NUMERIC_GREATER_THAN: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
-                NumericColumnData* data = record.get_numeric(generic_cmp.column);
+                NumericColumn numeric = record.get_numeric(generic_cmp.column);
 
-                switch (generic_cmp.column->type) {
-                    case ColumnType::Byte: if ((cmp.comparator.byte >= data->byte) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Float32: if ((cmp.comparator.float32 >= data->float32) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Long64: if ((cmp.comparator.long64 >= data->long64) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Integer: if ((cmp.comparator.int32 >= data->int32) ^ generic_cmp.negated) return false; break;
-                    default: { __builtin_unreachable(); };
-                }
-
+                if (!numeric.cmp_gt(cmp) ^ generic_cmp.negated) return false;
                 break;
             }
 
             case query_compiler::WhereCompareOp::NUMERIC_GREATER_THAN_EQUAL_TO: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
-                NumericColumnData* data = record.get_numeric(generic_cmp.column);
+                NumericColumn numeric = record.get_numeric(generic_cmp.column);
 
-                switch (generic_cmp.column->type) {
-                    case ColumnType::Byte: if ((cmp.comparator.byte > data->byte) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Float32: if ((cmp.comparator.float32 > data->float32) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Long64: if ((cmp.comparator.long64 > data->long64) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Integer: if ((cmp.comparator.int32 > data->int32) ^ generic_cmp.negated) return false; break;
-                    default: { __builtin_unreachable(); };
-                }
-
+                if (!numeric.cmp_gte(cmp) ^ generic_cmp.negated) return false;
                 break;
             }
 
             case query_compiler::WhereCompareOp::NUMERIC_LESS_THAN: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
-                NumericColumnData* data = record.get_numeric(generic_cmp.column);
+                NumericColumn numeric = record.get_numeric(generic_cmp.column);
 
-                switch (generic_cmp.column->type) {
-                    case ColumnType::Byte: if ((cmp.comparator.byte <= data->byte) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Float32: if ((cmp.comparator.float32 <= data->float32) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Long64: if ((cmp.comparator.long64 <= data->long64) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Integer: if ((cmp.comparator.int32 <= data->int32) ^ generic_cmp.negated) return false; break;
-                    default: { __builtin_unreachable(); };
-                }
-
+                if (!numeric.cmp_lt(cmp) ^ generic_cmp.negated) return false;
                 break;
             }
 
             case query_compiler::WhereCompareOp::NUMERIC_LESS_THAN_EQUAL_TO: {
                 query_compiler::QueryComparator::Numeric& cmp =  generic_cmp.info.as<query_compiler::QueryComparator::Numeric>();
-                NumericColumnData* data = record.get_numeric(generic_cmp.column);
+                NumericColumn numeric = record.get_numeric(generic_cmp.column);
 
-                switch (generic_cmp.column->type) {
-                    case ColumnType::Byte: if ((cmp.comparator.byte < data->byte) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Float32: if ((cmp.comparator.float32 < data->float32) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Long64: if ((cmp.comparator.long64 < data->long64) ^ generic_cmp.negated) return false; break;
-                    case ColumnType::Integer: if ((cmp.comparator.int32 < data->int32) ^ generic_cmp.negated) return false; break;
-                    default: { __builtin_unreachable(); };
-                }
-
+                if (!numeric.cmp_lte(cmp) ^ generic_cmp.negated) return false;
                 break;
             }
 
             case query_compiler::WhereCompareOp::NUMERIC_IN_LIST: {
                 query_compiler::QueryComparator::NumericInList& cmp = generic_cmp.info.as<query_compiler::QueryComparator::NumericInList>();
-                NumericColumnData* data = record.get_numeric(generic_cmp.column);
+                NumericColumn numeric = record.get_numeric(generic_cmp.column);
                 
-                NumericColumnData value;
-
-                switch (generic_cmp.column->type) {
-                    case ColumnType::Byte: value.byte = data->byte; break;
-                    case ColumnType::Long64: value.long64 = data->long64; break;
-
-                    // Guaranteed to be 4 bytes in length.
-                    default: value.unsigned32_raw = data->unsigned32_raw; break;
-                }
-
+                NumericColumnData value = numeric.to_owned_data();
                 if ((!cmp.list.contains(value.unsigned64_raw)) ^ generic_cmp.negated) return false;
 
                 break;
@@ -234,65 +194,182 @@ void ActiveTable::assemble_record_data_to_json(RecordData* record_data, size_t i
                 break;
             }
 
-            case ColumnType::Byte: output.AddMember(rapidjson_string_view(column_name), record.get_numeric(&column)->byte, output.GetAllocator()); break;
-            case ColumnType::Float32: output.AddMember(rapidjson_string_view(column_name), record.get_numeric(&column)->float32, output.GetAllocator()); break;
-            case ColumnType::Integer: output.AddMember(rapidjson_string_view(column_name), record.get_numeric(&column)->int32, output.GetAllocator()); break;
-            case ColumnType::Long64: output.AddMember(rapidjson_string_view(column_name), record.get_numeric(&column)->long64, output.GetAllocator()); break;
+            case ColumnType::Byte: output.AddMember(rapidjson_string_view(column_name), record.get_numeric_raw(&column)->byte, output.GetAllocator()); break;
+            case ColumnType::Float32: output.AddMember(rapidjson_string_view(column_name), record.get_numeric_raw(&column)->float32, output.GetAllocator()); break;
+            case ColumnType::Integer: output.AddMember(rapidjson_string_view(column_name), record.get_numeric_raw(&column)->int32, output.GetAllocator()); break;
+            case ColumnType::Long64: output.AddMember(rapidjson_string_view(column_name), record.get_numeric_raw(&column)->long64, output.GetAllocator()); break;
         }
     }
 }
 
 bool ActiveTable::find_one_record(query_compiler::CompiledFindQuery* query, rapidjson::Document& result) {
-    this->op_mutex.lock();
+    std::lock_guard<std::mutex> lock(op_mutex);
 
     size_t offset_counter = query->offset;
-    for (Record record : table_iterator::iterate_all(*this)) {
-        // If the block is empty, skip to the next one.
-        if (!record.get_flags()->active) continue;
-
-        // Check if record matches conditions.
-        if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
-            // Ignore matched records until offset runs out.
-            if (offset_counter != 0) {
-                --offset_counter;
-                continue;
-            }
-
-            assemble_record_data_to_json((RecordData*)record, query->columns_returned, result);
-
-            this->op_mutex.unlock();
-            return true;
+    for (Record record : table_iterator::iterate_specific(*this, query)) {
+        // Ignore matched records until offset runs out.
+        if (offset_counter != 0) {
+            --offset_counter;
+            continue;
         }
+
+        assemble_record_data_to_json((RecordData*)record, query->columns_returned, result);
+        return true;
     }
 
-    this->op_mutex.unlock();
     return false;
 }
 
 void ActiveTable::find_many_records(query_compiler::CompiledFindQuery* query, rapidjson::Document& result) {
-    this->op_mutex.lock();
+    std::lock_guard<std::mutex> lock(op_mutex);
     result.SetArray();
 
-    size_t offset_counter = query->offset;
-    for (Record record : table_iterator::iterate_all(*this)) {
-        // If the block is empty, skip to the next one.
-        if (!record.get_flags()->active) continue;
+    // Sorted results.
+    // This needs a separate implementation for best efficiency.
+    if (query->result_sort != ResultSortMode::NONE) {
+        std::list<std::unique_ptr<RecordData[]>> records;
 
-        // Check if record matches conditions.
-        if (verify_record_conditions_match((RecordData*)record, query->conditions, query->conditions_count)) {
+        // Offsets work a little differently in sorted queries.
+        // We want to get the top limit + offset records, then remove offset of the first resulting records.
+        size_t temp_limit = query->limit + query->offset;
+
+        for (Record record : table_iterator::iterate_specific(*this, query)) {
+            // Insert the first entry.
+            if (records.size() == 0) {
+                records.push_front(record.to_owned_data());
+            }
+            
+            // Any other entry.
+            else {
+                NumericColumn key = record.get_numeric(query->result_sort_column);
+
+                // Ascending logic.
+                if (query->result_sort == ResultSortMode::ASCENDING) {
+                    NumericColumn tail_record = Record(*this, records.back().get()).get_numeric(query->result_sort_column);
+
+                    // If the limit was reached, we can make some assumptions to eliminate records we know won't appear in the results.
+                    // By doing this we can prevent wasted work due to allocations and copying of rows that will simply be pruned later.
+                    if (query->limit != 0 && records.size() == temp_limit) {
+                        if (key.cmp_gte(tail_record)) continue;
+                    } 
+                    
+                    // Limit wasn't reached yet, we can do some additional inserts.
+                    else {
+                        // If the record is larger or equal to the tail, push it to the end.
+                        if (key.cmp_gte(tail_record)) {
+                            records.push_back(record.to_owned_data());
+                            goto done;
+                        }
+                    }
+
+                    NumericColumn top_record = Record(*this, records.front().get()).get_numeric(query->result_sort_column);
+
+                    // If the record is smaller or equal to the top entry, push it to the front.
+                    if (key.cmp_lte(top_record)) {
+                        records.push_front(record.to_owned_data());
+                        goto done;
+                    }
+
+                    // This record will go somewhere in-between the list, hence we will need to find a suitable position.
+                    for (auto pos = std::next(records.begin()); pos != records.end(); ++pos) {
+                        NumericColumn list_record = Record(*this, pos->get()).get_numeric(query->result_sort_column);
+                        if (key.cmp_lte(list_record)) {
+                            records.insert(pos, record.to_owned_data());
+                            goto done;
+                        }
+                    }
+
+                    #if !defined(__OPTIMIZE__)
+                        puts("Debug build check: impossible fallthrough while sorting!");
+                        std::terminate();
+                    #else
+                        __builtin_unreachable();
+                    #endif
+                }
+                
+                // Descending logic.
+                else if (query->result_sort == ResultSortMode::DESCENDING) {
+                    NumericColumn tail_record = Record(*this, records.back().get()).get_numeric(query->result_sort_column);
+
+                    // If the limit was reached, we can make some assumptions to eliminate records we know won't appear in the results.
+                    if (query->limit != 0 && records.size() == temp_limit) {
+                        if (key.cmp_lte(tail_record)) continue;
+                    }
+
+                    // Limit wasn't reached yet, we can do some additional inserts.
+                    else {
+                        // If the record is smaller or equal to the tail, push it to the end.
+                        if (key.cmp_lte(tail_record)) {
+                            records.push_back(record.to_owned_data());
+                            goto done;
+                        }
+                    }
+
+                    NumericColumn top_record = Record(*this, records.front().get()).get_numeric(query->result_sort_column);
+
+                    // If the record is larger or equal to the top entry, push it to the front.
+                    if (key.cmp_gte(top_record)) {
+                        records.push_front(record.to_owned_data());
+                        goto done;
+                    }
+
+                    // This record will go somewhere in-between the list, hence we will need to find a suitable position.
+                    for (auto pos = std::next(records.begin()); pos != records.end(); ++pos) {
+                        NumericColumn list_record = Record(*this, pos->get()).get_numeric(query->result_sort_column);
+                        if (key.cmp_gte(list_record)) {
+                            records.insert(pos, record.to_owned_data());
+                            goto done;
+                        }
+                    }
+
+                    #if !defined(__OPTIMIZE__)
+                        puts("Debug build check: impossible fallthrough while sorting!");
+                        std::terminate();
+                    #else
+                        __builtin_unreachable();
+                    #endif
+                }
+
+                done:
+                // If the query has a limit and the list has exceeded it, remove the last entry.
+                if (query->limit != 0 && records.size() > temp_limit) records.pop_back();
+            }
+        }
+
+        // We're done collecting the records, we can now serialize and return them.
+
+        auto record_pos = records.begin();
+        if (query->offset != 0) {
+            // If the offset is more than what we have, we have nothing to return.
+            if (query->offset >= records.size()) return;
+
+            // Offset the first specified entries.
+            std::advance(record_pos, query->offset);
+        }
+
+        for (; record_pos != records.end(); ++record_pos) {
+            rapidjson::Document record_object(&result.GetAllocator());
+            assemble_record_data_to_json(record_pos->get(), query->columns_returned, record_object);
+
+            result.PushBack(record_object, result.GetAllocator());
+        }
+    }
+
+    // No sorting results.
+    else {
+        size_t offset_counter = query->offset;
+        for (Record record : table_iterator::iterate_specific(*this, query)) {
             // Ignore matched records until offset runs out.
             if (offset_counter != 0) {
                 --offset_counter;
                 continue;
             }
-
+    
             rapidjson::Document record_object(&result.GetAllocator());
             assemble_record_data_to_json((RecordData*)record, query->columns_returned, record_object);
-
+    
             result.PushBack(record_object, result.GetAllocator());
             if (query->limit != 0 && result.Size() == query->limit) break;
         }
     }
-
-    this->op_mutex.unlock();
 }

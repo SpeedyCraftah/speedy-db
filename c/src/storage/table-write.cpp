@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
-    this->op_mutex.lock();
+    std::lock_guard<std::mutex> lock(op_mutex);
 
     Record record = Record(*this, this->header_buffer);
     
@@ -57,27 +57,17 @@ void ActiveTable::insert_record(query_compiler::CompiledInsertQuery* query) {
         // Column is numeric.
         else {
             query_compiler::InsertColumn::Numeric& column_data = query->values[i].info.as<query_compiler::InsertColumn::Numeric>();
-            NumericColumnData* data = record.get_numeric(&column);
-
-            switch (column.type) {
-                case ColumnType::Byte: data->byte = column_data.data.byte; break;
-                case ColumnType::Long64: data->long64 = column_data.data.long64; break;
-                
-                // Rest are 4 byte long values.
-                default: data->unsigned32_raw = column_data.data.unsigned32_raw; break;
-            }
+            record.get_numeric(&column).write(column_data.data);
         }
     }
 
     // Write to the file.
     fwrite_unlocked((RecordData*)record, 1, this->header.record_size, this->data_handle);
-
-    this->op_mutex.unlock();
 }
 
 size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query) {
-    this->op_mutex.lock();
-
+    std::lock_guard<std::mutex> lock(op_mutex);
+    
     size_t count = 0;
     for (auto info : table_iterator::iterate_bulk(*this)) {
         bool changes_made = false;
@@ -110,13 +100,11 @@ size_t ActiveTable::erase_many_records(query_compiler::CompiledEraseQuery* query
     }
 
     fflush(this->data_handle);
-
-    this->op_mutex.unlock();
     return count;
 }
 
 size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* query) {
-    this->op_mutex.lock();
+    std::lock_guard<std::mutex> lock(op_mutex);
 
     size_t count = 0;
     for (auto info : table_iterator::iterate_bulk(*this)) {
@@ -135,15 +123,7 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
                     switch (generic_update.op) {
                         case query_compiler::UpdateChangesOp::NUMERIC_SET: {
                             query_compiler::UpdateSet::Numeric& update = generic_update.info.as<query_compiler::UpdateSet::Numeric>();
-                            NumericColumnData* data = record.get_numeric(generic_update.column);
-                            
-                            switch (generic_update.column->type) {
-                                case ColumnType::Byte: data->byte = update.new_value.byte; break;
-                                case ColumnType::Long64: data->long64 = update.new_value.long64; break;
-                                
-                                // Rest are 4 byte long values.
-                                default: data->unsigned32_raw = update.new_value.unsigned32_raw; break;
-                            }
+                            record.get_numeric(generic_update.column).write(update.new_value);
 
                             break;
                         }
@@ -224,7 +204,5 @@ size_t ActiveTable::update_many_records(query_compiler::CompiledUpdateQuery* que
     }
 
     fflush(this->data_handle);
-
-    this->op_mutex.unlock();
     return count;
 }
