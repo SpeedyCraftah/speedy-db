@@ -10,7 +10,7 @@ extern std::unordered_map<std::string, DatabaseAccount*, MapStringViewHash, MapS
 extern FILE* database_accounts_handle;
 
 #define DB_MAJOR_VERSION 11
-#define DB_MINOR_VERSION 0
+#define DB_MINOR_VERSION 1
 
 // For use to detect incompatible schema versions between updates.
 #define DB_SCHEMA_MAJOR_VERSION 2
